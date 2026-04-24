@@ -216,6 +216,13 @@ go test ./...
 docker run --rm -v "$PWD":/src -w /src golang:1.26.2 sh -lc '/usr/local/go/bin/go test ./...'
 ```
 
+## Release
+- `feature/**` から `main` へ merge された Pull Request を契機に、自動で release tag / GHCR publish / GitHub Release を実行します。
+- バージョン判定は PR title / body / commit messages を集約して行います。
+- Conventional Commits:
+  `BREAKING CHANGE:` / `feat!:` などは major、`feat:` は minor、`fix:` / `hotfix:` は patch を更新します。
+- Git tag は `vX.Y.Z`、Docker tag は `X.Y.Z` と `vX.Y.Z`、および release 時のみ `latest` を付与します。
+
 ## 開発用 Compose
 `dev/` に Traefik + frontend + backend + turnstile-appcheck-gateway の検証環境を用意しています。
 
