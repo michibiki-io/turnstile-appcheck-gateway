@@ -1,0 +1,81 @@
+services:
+  traefik:
+    image: traefik:v3.3
+    container_name: dev-traefik
+    command:
+      - --entrypoints.web.address=:80
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.constraints=Label(`traefik.group`,`appcheck-dev`)
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --api.dashboard=true
+      - --log.level=INFO
+    ports:
+      - "${TRAEFIK_PORT:-8080}:80"
+      - "${TRAEFIK_DASHBOARD_PORT:-8088}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+    networks:
+      - devnet
+
+  turnstile-appcheck-gateway:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: turnstile-appcheck-gateway
+    env_file:
+      - ./.env
+    environment:
+      - HTTP_ADDR=:8080
+    networks:
+      - devnet
+    labels:
+      - traefik.group=appcheck-dev
+      - traefik.enable=true
+      - traefik.http.routers.appcheck.rule=PathPrefix(`/appcheck`)
+      - traefik.http.routers.appcheck.entrypoints=web
+      - traefik.http.routers.appcheck.priority=100
+      - traefik.http.services.appcheck.loadbalancer.server.port=8080
+
+  backend:
+    image: traefik/whoami:v1.11
+    container_name: dev-backend
+    networks:
+      - devnet
+    labels:
+      - traefik.group=appcheck-dev
+      - traefik.enable=true
+      - traefik.http.routers.backend.rule=PathPrefix(`/backend`)
+      - traefik.http.routers.backend.entrypoints=web
+      - traefik.http.routers.backend.priority=90
+      - traefik.http.routers.backend.middlewares=appcheck-auth@file,backend-strip@docker
+      - traefik.http.middlewares.backend-strip.stripprefix.prefixes=/backend
+      - traefik.http.services.backend.loadbalancer.server.port=80
+
+  frontend:
+    image: nginx:1.27-alpine
+    container_name: dev-frontend
+    command: >
+      /bin/sh -c '
+      site_key_escaped=$$(printf "%s" "$${TURNSTILE_SITE_KEY:-}" | sed -e "s/[\/&]/\\\&/g");
+      sed "s/__TURNSTILE_SITE_KEY__/$${site_key_escaped}/g" /opt/frontend/index.html > /usr/share/nginx/html/index.html;
+      exec nginx -g "daemon off;";
+      '
+    environment:
+      - TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY:-}
+    volumes:
+      - ./frontend:/opt/frontend:ro
+    networks:
+      - devnet
+    labels:
+      - traefik.group=appcheck-dev
+      - traefik.enable=true
+      - traefik.http.routers.frontend.rule=PathPrefix(`/`) && !PathPrefix(`/appcheck`) && !PathPrefix(`/backend`)
+      - traefik.http.routers.frontend.entrypoints=web
+      - traefik.http.routers.frontend.priority=1
+      - traefik.http.services.frontend.loadbalancer.server.port=80
+
+networks:
+  devnet:
+    name: appcheck-devnet

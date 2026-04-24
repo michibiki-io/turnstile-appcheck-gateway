@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>App Check Dev Frontend</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f6f8;
+        --card: #ffffff;
+        --line: #d9e0e8;
+        --text: #0f172a;
+        --muted: #475569;
+        --primary: #0b5fff;
+      }
+      body {
+        margin: 0;
+        font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", sans-serif;
+        background: linear-gradient(135deg, #eef3ff 0%, var(--bg) 55%, #e7fff7 100%);
+        color: var(--text);
+      }
+      .wrap {
+        max-width: 900px;
+        margin: 32px auto;
+        padding: 0 16px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 16px;
+        box-shadow: 0 6px 24px rgba(11, 23, 42, 0.06);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+      p {
+        margin: 6px 0 0;
+        color: var(--muted);
+      }
+      label {
+        display: block;
+        margin: 12px 0 6px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      input, textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 14px;
+        background: #fff;
+      }
+      textarea {
+        min-height: 96px;
+        resize: vertical;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+      button {
+        border: none;
+        border-radius: 8px;
+        padding: 10px 14px;
+        background: var(--primary);
+        color: #fff;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      button.secondary {
+        background: #334155;
+      }
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 12px;
+        background: #0b1220;
+        color: #d4e1ff;
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      #turnstileWidget {
+        min-height: 66px;
+        display: flex;
+        align-items: center;
+      }
+      .status {
+        margin-top: 8px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>App Check 検証デモ</h1>
+        <p>
+          1) Turnstileトークンを `/appcheck/api/v1/exchange` に投げて App Check token を取得。<br />
+          2) その token を `X-Firebase-AppCheck` で `/backend` に付けてアクセス。
+        </p>
+      </div>
+
+      <div class="card">
+        <label for="exchangeUrl">Exchange URL</label>
+        <input id="exchangeUrl" value="/appcheck/api/v1/exchange" />
+
+        <label for="turnstileSiteKey">Turnstile Site Key</label>
+        <input id="turnstileSiteKey" placeholder="0x4AAAA..." value="__TURNSTILE_SITE_KEY__" />
+
+        <div class="row">
+          <button id="renderWidgetBtn">Turnstile ウィジェット描画</button>
+          <button class="secondary" id="resetWidgetBtn">Turnstile リセット</button>
+        </div>
+        <div id="turnstileWidget"></div>
+        <div id="turnstileStatus" class="status">site key を入力して「描画」を押してください。</div>
+
+        <label for="turnstileToken">Turnstile token</label>
+        <textarea id="turnstileToken" placeholder="Turnstileウィジェットで得たtokenを貼り付け"></textarea>
+
+        <label>
+          <input id="limitedUse" type="checkbox" />
+          limitedUse=true
+        </label>
+
+        <div class="row">
+          <button id="exchangeBtn">1) Exchange 実行</button>
+          <button class="secondary" id="clearBtn">結果クリア</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <label for="appCheckToken">App Check token</label>
+        <textarea id="appCheckToken" placeholder="exchange成功時に自動入力"></textarea>
+        <div id="appCheckExpiry" class="status">有効期限: 未取得</div>
+
+        <label for="backendUrl">Protected backend URL</label>
+        <input id="backendUrl" value="/backend" />
+
+        <label for="verifyHeader">Header name</label>
+        <input id="verifyHeader" value="X-Firebase-AppCheck" />
+
+        <div class="row">
+          <button id="backendBtn">2) Protected backend 呼び出し</button>
+          <button class="secondary" id="backendNoHeaderBtn">ヘッダなしで呼び出し(失敗確認)</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>結果</h3>
+        <pre id="output" class="mono">ready</pre>
+      </div>
+    </div>
+
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+    <script>
+      const output = document.getElementById("output");
+      const siteKeyInput = document.getElementById("turnstileSiteKey");
+      const turnstileTokenInput = document.getElementById("turnstileToken");
+      const widgetContainer = document.getElementById("turnstileWidget");
+      const turnstileStatus = document.getElementById("turnstileStatus");
+      const appCheckExpiry = document.getElementById("appCheckExpiry");
+      const TURNSTILE_SITE_KEY_STORAGE = "turnstile-site-key";
+      const rawInjectedSiteKey = "__TURNSTILE_SITE_KEY__";
+      const injectedSiteKey =
+        rawInjectedSiteKey === "__TURNSTILE_SITE_KEY__" ? "" : rawInjectedSiteKey.trim();
+      let widgetId = null;
+
+      function setOutput(label, payload) {
+        output.textContent = `[${new Date().toISOString()}] ${label}\n${
+          typeof payload === "string" ? payload : JSON.stringify(payload, null, 2)
+        }`;
+      }
+
+      function setTurnstileStatus(message) {
+        turnstileStatus.textContent = message;
+      }
+
+      function getTurnstileToken() {
+        const manual = turnstileTokenInput.value.trim();
+        if (manual) {
+          return manual;
+        }
+        if (window.turnstile && widgetId !== null) {
+          const tokenFromWidget = window.turnstile.getResponse(widgetId) || "";
+          if (tokenFromWidget) {
+            turnstileTokenInput.value = tokenFromWidget;
+            return tokenFromWidget;
+          }
+        }
+        return "";
+      }
+
+      async function waitForTurnstileApi(timeoutMs = 10000) {
+        const started = Date.now();
+        while (!window.turnstile || typeof window.turnstile.render !== "function") {
+          if (Date.now() - started > timeoutMs) {
+            throw new Error("Turnstile API load timeout");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+      }
+
+      async function renderTurnstileWidget() {
+        const siteKey = siteKeyInput.value.trim();
+        if (!siteKey) {
+          setTurnstileStatus("site key が空です。");
+          return;
+        }
+
+        localStorage.setItem(TURNSTILE_SITE_KEY_STORAGE, siteKey);
+        await waitForTurnstileApi();
+
+        if (widgetId !== null && window.turnstile) {
+          try {
+            window.turnstile.remove(widgetId);
+          } catch (_) {
+            widgetContainer.innerHTML = "";
+          }
+          widgetId = null;
+        }
+        widgetContainer.innerHTML = "";
+        turnstileTokenInput.value = "";
+
+        widgetId = window.turnstile.render(widgetContainer, {
+          sitekey: siteKey,
+          callback: (token) => {
+            turnstileTokenInput.value = token;
+            setTurnstileStatus("Turnstile token を取得しました。");
+          },
+          "expired-callback": () => {
+            turnstileTokenInput.value = "";
+            setTurnstileStatus("Turnstile token が期限切れです。再度認証してください。");
+          },
+          "error-callback": () => {
+            turnstileTokenInput.value = "";
+            setTurnstileStatus("Turnstile の検証でエラーが発生しました。");
+          }
+        });
+
+        setTurnstileStatus("Turnstile ウィジェットを描画しました。");
+      }
+
+      function resetTurnstileWidget() {
+        if (window.turnstile && widgetId !== null) {
+          window.turnstile.reset(widgetId);
+        }
+        turnstileTokenInput.value = "";
+        setTurnstileStatus("Turnstile をリセットしました。");
+      }
+
+      function decodeJwtPayload(token) {
+        const parts = String(token || "").split(".");
+        if (parts.length !== 3) {
+          return null;
+        }
+        try {
+          const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+          const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+          return JSON.parse(atob(padded));
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function detectExpireTimeMillis(data, token) {
+        if (data && Number.isFinite(Number(data.expireTimeMillis))) {
+          const ms = Number(data.expireTimeMillis);
+          if (ms > 0) {
+            return ms;
+          }
+        }
+        const payload = decodeJwtPayload(token);
+        if (payload && Number.isFinite(Number(payload.exp))) {
+          const ms = Number(payload.exp) * 1000;
+          if (ms > 0) {
+            return ms;
+          }
+        }
+        return null;
+      }
+
+      function renderExpireTime(expireTimeMillis) {
+        if (!Number.isFinite(Number(expireTimeMillis))) {
+          appCheckExpiry.textContent = "有効期限: 不明";
+          return;
+        }
+        const ms = Number(expireTimeMillis);
+        const now = Date.now();
+        const local = new Date(ms).toLocaleString();
+        const diffSec = Math.floor((ms - now) / 1000);
+        const remain =
+          diffSec >= 0
+            ? `残り ${Math.floor(diffSec / 60)}分${diffSec % 60}秒`
+            : `${Math.abs(Math.floor(diffSec / 60))}分${Math.abs(diffSec % 60)}秒 経過`;
+        appCheckExpiry.textContent = `有効期限(ローカル時刻): ${local} (${remain})`;
+      }
+
+      async function callJson(url, options) {
+        const res = await fetch(url, options);
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (_) {
+          data = text;
+        }
+        return { status: res.status, headers: Object.fromEntries(res.headers.entries()), data };
+      }
+
+      document.getElementById("exchangeBtn").addEventListener("click", async () => {
+        const exchangeUrl = document.getElementById("exchangeUrl").value.trim();
+        const turnstileToken = getTurnstileToken();
+        const limitedUse = document.getElementById("limitedUse").checked;
+
+        if (!turnstileToken) {
+          setOutput("exchange", "turnstileToken が空です。先にTurnstile認証を実行してください。");
+          return;
+        }
+
+        try {
+          const result = await callJson(exchangeUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ turnstileToken, limitedUse })
+          });
+
+          if (result.status >= 200 && result.status < 300 && result.data && result.data.token) {
+            const appCheckToken = result.data.token;
+            document.getElementById("appCheckToken").value = appCheckToken;
+            const expireTimeMillis = detectExpireTimeMillis(result.data, appCheckToken);
+            renderExpireTime(expireTimeMillis);
+          } else {
+            appCheckExpiry.textContent = "有効期限: 未取得";
+          }
+          setOutput("exchange", result);
+        } catch (err) {
+          appCheckExpiry.textContent = "有効期限: 未取得";
+          setOutput("exchange-error", String(err));
+        }
+      });
+
+      document.getElementById("backendBtn").addEventListener("click", async () => {
+        const backendUrl = document.getElementById("backendUrl").value.trim();
+        const appCheckToken = document.getElementById("appCheckToken").value.trim();
+        const headerName = document.getElementById("verifyHeader").value.trim() || "X-Firebase-AppCheck";
+
+        if (!appCheckToken) {
+          setOutput("backend", "App Check token が空です");
+          return;
+        }
+
+        try {
+          const result = await callJson(backendUrl, {
+            method: "GET",
+            headers: { [headerName]: appCheckToken }
+          });
+          setOutput("backend", result);
+        } catch (err) {
+          setOutput("backend-error", String(err));
+        }
+      });
+
+      document.getElementById("backendNoHeaderBtn").addEventListener("click", async () => {
+        const backendUrl = document.getElementById("backendUrl").value.trim();
+        try {
+          const result = await callJson(backendUrl, { method: "GET" });
+          setOutput("backend-no-header", result);
+        } catch (err) {
+          setOutput("backend-no-header-error", String(err));
+        }
+      });
+
+      document.getElementById("clearBtn").addEventListener("click", () => {
+        output.textContent = "ready";
+        appCheckExpiry.textContent = "有効期限: 未取得";
+      });
+
+      document.getElementById("renderWidgetBtn").addEventListener("click", async () => {
+        try {
+          await renderTurnstileWidget();
+        } catch (err) {
+          setTurnstileStatus(`描画失敗: ${String(err)}`);
+        }
+      });
+
+      document.getElementById("resetWidgetBtn").addEventListener("click", () => {
+        resetTurnstileWidget();
+      });
+
+      (function initSiteKey() {
+        const params = new URLSearchParams(window.location.search);
+        const fromQuery = (params.get("sitekey") || "").trim();
+        const fromStorage = (localStorage.getItem(TURNSTILE_SITE_KEY_STORAGE) || "").trim();
+        const initial = fromQuery || fromStorage || injectedSiteKey;
+        if (initial) {
+          siteKeyInput.value = initial;
+          renderTurnstileWidget().catch((err) => {
+            setTurnstileStatus(`初期描画失敗: ${String(err)}`);
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>
