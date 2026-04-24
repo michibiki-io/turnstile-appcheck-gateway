@@ -1,0 +1,9 @@
+http:
+  middlewares:
+    appcheck-auth:
+      forwardAuth:
+        address: http://turnstile-appcheck-gateway:8080/appcheck/api/v1/verify
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-AppCheck-Verified
+          - X-AppCheck-AppID
