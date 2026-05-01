@@ -35,6 +35,15 @@ func TestLoadFromMapConstructsDefaults(t *testing.T) {
 	if cfg.AppCheckTokenTTL != 30*time.Minute {
 		t.Fatalf("AppCheckTokenTTL = %s", cfg.AppCheckTokenTTL)
 	}
+	if !cfg.Admin.Dashboard.Enabled || cfg.Admin.Dashboard.BasePath != "/admin" {
+		t.Fatalf("Admin dashboard defaults = %#v", cfg.Admin.Dashboard)
+	}
+	if cfg.Admin.Auth.Mode != "header" || len(cfg.Admin.Auth.AllowedGroups) != 1 || cfg.Admin.Auth.AllowedGroups[0] != "gateway-admins" {
+		t.Fatalf("Admin auth defaults = %#v", cfg.Admin.Auth)
+	}
+	if !cfg.Audit.Enabled || cfg.Audit.SQLitePath == "" || cfg.Audit.RetentionDays != 90 {
+		t.Fatalf("Audit defaults = %#v", cfg.Audit)
+	}
 }
 
 func TestLoadFromMapUsesAppResourceOverride(t *testing.T) {
@@ -120,6 +129,40 @@ func TestLoadFromMapInvalidAppCheckTokenTTL(t *testing.T) {
 	env["APPCHECK_TOKEN_TTL"] = "169h"
 	if _, err := loadFromMap(env); err == nil {
 		t.Fatal("expected error for APPCHECK_TOKEN_TTL > 7d")
+	}
+}
+
+func TestLoadFromMapAdminAuditAndRateLimitEnv(t *testing.T) {
+	env := minimalEnv()
+	env["ADMIN_DASHBOARD_ENABLED"] = "false"
+	env["ADMIN_BASE_PATH"] = "ops"
+	env["ADMIN_AUDIT_TIMESTAMP_FORMAT"] = "2006/01/02 15:04 MST"
+	env["ADMIN_AUDIT_TIMESTAMP_TIMEZONE"] = "UTC"
+	env["ADMIN_AUTH_MODE"] = "none"
+	env["ADMIN_ALLOWED_USERS"] = "admin@example.com, ops@example.com"
+	env["ADMIN_ALLOWED_GROUPS"] = "admins, operators"
+	env["AUDIT_ENABLED"] = "false"
+	env["AUDIT_SQLITE_PATH"] = "/tmp/audit.db"
+	env["AUDIT_RETENTION_DAYS"] = "7"
+	env["RATE_LIMIT_ENABLED"] = "false"
+	env["RATE_LIMIT_REQUESTS"] = "5"
+	env["RATE_LIMIT_WINDOW"] = "10s"
+
+	cfg, err := loadFromMap(env)
+	if err != nil {
+		t.Fatalf("loadFromMap() error = %v", err)
+	}
+	if cfg.Admin.Dashboard.Enabled || cfg.Admin.Dashboard.BasePath != "/ops" {
+		t.Fatalf("Admin dashboard env = %#v", cfg.Admin.Dashboard)
+	}
+	if cfg.Admin.Auth.Mode != "none" || len(cfg.Admin.Auth.AllowedUsers) != 2 || len(cfg.Admin.Auth.AllowedGroups) != 2 {
+		t.Fatalf("Admin auth env = %#v", cfg.Admin.Auth)
+	}
+	if cfg.Audit.Enabled || cfg.Audit.SQLitePath != "/tmp/audit.db" || cfg.Audit.RetentionDays != 7 {
+		t.Fatalf("Audit env = %#v", cfg.Audit)
+	}
+	if cfg.RateLimit.Enabled || cfg.RateLimit.RequestsPerWindow != 5 || cfg.RateLimit.Window != 10*time.Second {
+		t.Fatalf("RateLimit env = %#v", cfg.RateLimit)
 	}
 }
 

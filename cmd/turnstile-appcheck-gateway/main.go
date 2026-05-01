@@ -10,10 +10,12 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	firebase "firebase.google.com/go/v4"
 	"google.golang.org/api/option"
 
+	"github.com/example/turnstile-appcheck-gateway/internal/audit"
 	"github.com/example/turnstile-appcheck-gateway/internal/auth"
 	"github.com/example/turnstile-appcheck-gateway/internal/config"
 	"github.com/example/turnstile-appcheck-gateway/internal/firebaseappcheck"
@@ -39,6 +41,27 @@ func run() error {
 
 	logger := logging.New(cfg.LogLevel)
 	slog.SetDefault(logger)
+
+	var auditRecorder audit.Recorder = audit.NoopRecorder{}
+	var auditStore *audit.Store
+	if cfg.Audit.Enabled {
+		auditStore, err = audit.Open(context.Background(), cfg.Audit.SQLitePath)
+		if err != nil {
+			return fmt.Errorf("open audit store: %w", err)
+		}
+		defer func() { _ = auditStore.Close() }()
+		if err := auditStore.PruneRetention(context.Background(), cfg.Audit.RetentionDays); err != nil {
+			return fmt.Errorf("prune audit retention: %w", err)
+		}
+		auditRecorder = auditStore
+		_ = auditRecorder.Record(context.Background(), audit.Event{
+			Actor:       "system",
+			ActorSource: "system",
+			Action:      "system.startup",
+			Result:      audit.ResultSuccess,
+			Message:     "Application startup",
+		})
+	}
 
 	normalizedCredsJSON, serviceAccount, err := auth.NormalizeJSON(cfg.ServiceAccountJSON)
 	if err != nil {
@@ -99,6 +122,7 @@ func run() error {
 		Exchanger:         appCheckExchangeClient,
 		TrustProxyHeaders: cfg.TrustProxyHeaders,
 		OriginAllowed:     cfg.IsExchangeOriginAllowed,
+		Audit:             auditRecorder,
 	}
 	verifyHandler := &handlers.VerifyHandler{
 		Logger:        logger,
@@ -106,9 +130,10 @@ func run() error {
 		HeaderName:    cfg.VerifyHeaderName,
 		SuccessStatus: cfg.VerifySuccessStatus,
 		FailureStatus: cfg.VerifyFailureStatus,
+		Audit:         auditRecorder,
 	}
 
-	router, err := httpserver.NewRouter(cfg, logger, exchangeHandler, verifyHandler, health.NewHandler())
+	router, err := httpserver.NewRouter(cfg, logger, exchangeHandler, verifyHandler, health.NewHandler(), auditRecorder)
 	if err != nil {
 		return fmt.Errorf("create router: %w", err)
 	}

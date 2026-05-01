@@ -11,6 +11,8 @@ import urllib.request
 
 
 TYPE_RE = re.compile(r"^(feat|fix|hotfix)(?:\([^)]+\))?(?:!)?:\s*(.+)$", re.IGNORECASE)
+TRAILING_ISSUE_REFS_RE = re.compile(r"^(.*?)(?:\s+((?:#\d+)(?:[,\s]+#\d+)*))$")
+ISSUE_REF_RE = re.compile(r"#\d+")
 SECTIONS = {
     "fix": "Bug Fixes",
     "hotfix": "Hot Fixes",
@@ -60,17 +62,38 @@ def associated_pr_number(repo: str, sha: str, token: str | None) -> str:
     return ""
 
 
+def split_description_and_issue_refs(description: str) -> tuple[str, list[str]]:
+    match = TRAILING_ISSUE_REFS_RE.match(description.strip())
+    if not match:
+        return description.strip(), []
+    cleaned = match.group(1).strip()
+    issue_refs = ISSUE_REF_RE.findall(match.group(2))
+    if not cleaned or not issue_refs:
+        return description.strip(), []
+    return cleaned, issue_refs
+
+
+def render_metadata(issue_refs: list[str], pr_number: str, short_sha: str) -> str:
+    parts: list[str] = []
+    if issue_refs:
+        prefix = "issue" if len(issue_refs) == 1 else "issues"
+        parts.append(f"{prefix} {', '.join(issue_refs)}")
+    if pr_number:
+        parts.append(f"PR #{pr_number}")
+    parts.append(f"commit {short_sha}")
+    return ", ".join(parts)
+
+
 def render_entry(repo: str, sha: str, subject: str, token: str | None) -> tuple[str, str] | None:
     match = TYPE_RE.match(subject)
     if not match:
         return None
     kind = match.group(1).lower()
-    description = match.group(2).strip()
+    description, issue_refs = split_description_and_issue_refs(match.group(2))
     pr_number = associated_pr_number(repo, sha, token)
     short_sha = sha[:7]
-    if pr_number:
-        return SECTIONS[kind], f"- {description} #{pr_number} ({short_sha})"
-    return SECTIONS[kind], f"- {description} ({short_sha})"
+    metadata = render_metadata(issue_refs, pr_number, short_sha)
+    return SECTIONS[kind], f"- {description} ({metadata})"
 
 
 def build_notes(repo: str, previous_tag: str, target: str, token: str | None) -> str:

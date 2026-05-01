@@ -6,6 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/example/turnstile-appcheck-gateway/internal/admin"
+	"github.com/example/turnstile-appcheck-gateway/internal/audit"
 	"github.com/example/turnstile-appcheck-gateway/internal/config"
 	"github.com/example/turnstile-appcheck-gateway/internal/handlers"
 	"github.com/example/turnstile-appcheck-gateway/internal/health"
@@ -13,7 +15,7 @@ import (
 )
 
 // NewRouter configures Gin routes and middleware.
-func NewRouter(cfg *config.Config, logger *slog.Logger, exchangeHandler *handlers.ExchangeHandler, verifyHandler *handlers.VerifyHandler, healthHandler *health.Handler) (*gin.Engine, error) {
+func NewRouter(cfg *config.Config, logger *slog.Logger, exchangeHandler *handlers.ExchangeHandler, verifyHandler *handlers.VerifyHandler, healthHandler *health.Handler, recorders ...audit.Recorder) (*gin.Engine, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is required")
 	}
@@ -41,9 +43,16 @@ func NewRouter(cfg *config.Config, logger *slog.Logger, exchangeHandler *handler
 	r.GET(cfg.HealthPath, gin.WrapF(healthHandler.Healthz))
 	r.GET(cfg.ReadyPath, gin.WrapF(healthHandler.Readyz))
 
+	recorder := audit.Recorder(audit.NoopRecorder{})
+	if len(recorders) > 0 && recorders[0] != nil {
+		recorder = recorders[0]
+	}
+
 	api := r.Group(cfg.AppCheckSubpath)
-	api.POST("/api/v1/exchange", exchangeHandler.Handle)
-	api.Any("/api/v1/verify", verifyHandler.Handle)
+	public := api.Group("", middleware.NewRateLimiter(cfg.RateLimit, logger, recorder))
+	public.POST("/api/v1/exchange", exchangeHandler.Handle)
+	public.Any("/api/v1/verify", verifyHandler.Handle)
+	admin.Register(api, cfg, logger, recorder)
 
 	return r, nil
 }
