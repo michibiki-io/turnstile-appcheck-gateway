@@ -1,4 +1,4 @@
-module github.com/example/turnstile-appcheck-gateway
+module github.com/michibiki-io/turnstile-appcheck-gateway
 
 go 1.26.2
 

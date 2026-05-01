@@ -8,11 +8,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/example/turnstile-appcheck-gateway/internal/audit"
-	apperrors "github.com/example/turnstile-appcheck-gateway/internal/errors"
-	"github.com/example/turnstile-appcheck-gateway/internal/firebaseappcheck"
-	"github.com/example/turnstile-appcheck-gateway/internal/model"
-	"github.com/example/turnstile-appcheck-gateway/internal/turnstile"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit"
+	apperrors "github.com/michibiki-io/turnstile-appcheck-gateway/internal/errors"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/firebaseappcheck"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/model"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/turnstile"
 )
 
 // ExchangeHandler implements POST /api/v1/exchange.

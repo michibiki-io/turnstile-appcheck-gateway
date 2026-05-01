@@ -2,7 +2,7 @@
   <img src="docs/images/turnstile-appcheck-gateway-logo-str.svg" alt="turnstile-appcheck-gateway" width="420">
 </p>
 
-`turnstile-appcheck-gateway` is a small Go/Gin service that bridges Cloudflare Turnstile and Firebase App Check Custom Provider. It exposes a frontend token exchange endpoint and a Traefik forwardAuth verification endpoint. The binary name is `turnstile-appcheck-gateway`; the Go module is `github.com/example/turnstile-appcheck-gateway`.
+`turnstile-appcheck-gateway` is a small Go/Gin service that bridges Cloudflare Turnstile and Firebase App Check Custom Provider. It exposes a frontend token exchange endpoint and a Traefik forwardAuth verification endpoint. The binary name is `turnstile-appcheck-gateway`; the Go module is `github.com/michibiki-io/turnstile-appcheck-gateway`.
 
 ## Table of Contents
 
@@ -364,7 +364,7 @@ Release automation runs for Pull Requests merged from `feature/**` into `main`. 
 
 ## 日本語
 
-`turnstile-appcheck-gateway` は Cloudflare Turnstile と Firebase App Check Custom Provider を連携するための小さな Go/Gin サービスです。frontend token exchange endpoint と Traefik forwardAuth verification endpoint を提供します。起動 binary 名は `turnstile-appcheck-gateway`、Go module は `github.com/example/turnstile-appcheck-gateway` です。
+`turnstile-appcheck-gateway` は Cloudflare Turnstile と Firebase App Check Custom Provider を連携するための小さな Go/Gin サービスです。frontend token exchange endpoint と Traefik forwardAuth verification endpoint を提供します。起動 binary 名は `turnstile-appcheck-gateway`、Go module は `github.com/michibiki-io/turnstile-appcheck-gateway` です。
 
 ### API リファレンス
 

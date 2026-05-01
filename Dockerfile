@@ -40,7 +40,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     /usr/local/go/bin/go build \
       -trimpath \
       -buildvcs=false \
-      -ldflags="-s -w -X github.com/example/turnstile-appcheck-gateway/internal/version.value=${BUILD_VERSION:-dev} -X github.com/example/turnstile-appcheck-gateway/internal/version.commit=${BUILD_COMMIT:-unknown}" \
+      -ldflags="-s -w -X github.com/michibiki-io/turnstile-appcheck-gateway/internal/version.value=${BUILD_VERSION:-dev} -X github.com/michibiki-io/turnstile-appcheck-gateway/internal/version.commit=${BUILD_COMMIT:-unknown}" \
       -o /out/turnstile-appcheck-gateway \
       ./cmd/turnstile-appcheck-gateway
 RUN mkdir -p /out/var-lib-turnstile-appcheck-gateway

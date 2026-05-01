@@ -15,15 +15,15 @@ import (
 	firebase "firebase.google.com/go/v4"
 	"google.golang.org/api/option"
 
-	"github.com/example/turnstile-appcheck-gateway/internal/audit"
-	"github.com/example/turnstile-appcheck-gateway/internal/auth"
-	"github.com/example/turnstile-appcheck-gateway/internal/config"
-	"github.com/example/turnstile-appcheck-gateway/internal/firebaseappcheck"
-	"github.com/example/turnstile-appcheck-gateway/internal/handlers"
-	"github.com/example/turnstile-appcheck-gateway/internal/health"
-	"github.com/example/turnstile-appcheck-gateway/internal/httpserver"
-	"github.com/example/turnstile-appcheck-gateway/internal/logging"
-	"github.com/example/turnstile-appcheck-gateway/internal/turnstile"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/auth"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/config"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/firebaseappcheck"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/handlers"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/health"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/httpserver"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/logging"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/turnstile"
 )
 
 func main() {

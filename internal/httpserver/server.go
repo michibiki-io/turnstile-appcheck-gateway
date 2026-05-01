@@ -6,12 +6,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/example/turnstile-appcheck-gateway/internal/admin"
-	"github.com/example/turnstile-appcheck-gateway/internal/audit"
-	"github.com/example/turnstile-appcheck-gateway/internal/config"
-	"github.com/example/turnstile-appcheck-gateway/internal/handlers"
-	"github.com/example/turnstile-appcheck-gateway/internal/health"
-	"github.com/example/turnstile-appcheck-gateway/internal/middleware"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/admin"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/config"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/handlers"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/health"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/middleware"
 )
 
 // NewRouter configures Gin routes and middleware.

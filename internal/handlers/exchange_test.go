@@ -12,8 +12,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/example/turnstile-appcheck-gateway/internal/firebaseappcheck"
-	"github.com/example/turnstile-appcheck-gateway/internal/turnstile"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/firebaseappcheck"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/turnstile"
 )
 
 func TestExchangeHandlerSuccess(t *testing.T) {

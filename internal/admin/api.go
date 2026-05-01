@@ -8,8 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/example/turnstile-appcheck-gateway/internal/audit"
-	"github.com/example/turnstile-appcheck-gateway/internal/version"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/version"
 )
 
 func (h *Handler) me(c *gin.Context) {

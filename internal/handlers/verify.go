@@ -7,8 +7,8 @@ import (
 	firebaseappchecksdk "firebase.google.com/go/v4/appcheck"
 	"github.com/gin-gonic/gin"
 
-	"github.com/example/turnstile-appcheck-gateway/internal/audit"
-	apperrors "github.com/example/turnstile-appcheck-gateway/internal/errors"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit"
+	apperrors "github.com/michibiki-io/turnstile-appcheck-gateway/internal/errors"
 )
 
 // VerifyTokenVerifier abstracts Firebase Admin SDK App Check verification.

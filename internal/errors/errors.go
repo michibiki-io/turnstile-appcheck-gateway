@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/example/turnstile-appcheck-gateway/internal/model"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/model"
 )
 
 // APIError is a structured internal error type carrying status and stable client-facing code.

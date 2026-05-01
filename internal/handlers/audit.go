@@ -9,7 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/example/turnstile-appcheck-gateway/internal/audit"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit"
 )
 
 func recordAudit(ctx context.Context, logger *slog.Logger, recorder audit.Recorder, event audit.Event) {

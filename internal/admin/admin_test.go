@@ -13,8 +13,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/example/turnstile-appcheck-gateway/internal/audit"
-	"github.com/example/turnstile-appcheck-gateway/internal/config"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/config"
 )
 
 func TestHeaderAuthAllowDenyAndMe(t *testing.T) {
