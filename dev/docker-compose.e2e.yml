@@ -1,0 +1,25 @@
+services:
+  turnstile-appcheck-gateway:
+    environment:
+      E2E_UPSTREAM_MODE: mock
+      E2E_TURNSTILE_PASS_TOKEN: e2e-turnstile-pass
+      E2E_TURNSTILE_FAIL_TOKEN: e2e-turnstile-fail
+      E2E_APPCHECK_TOKEN: e2e-appcheck-valid-token
+      E2E_APPCHECK_APP_ID: e2e-app-id
+      ADMIN_AUTH_MODE: header
+      ADMIN_ALLOWED_GROUPS: gateway-admins
+      AUDIT_SQLITE_PATH: /var/lib/turnstile-appcheck-gateway/audit.db
+      RATE_LIMIT_ENABLED: "false"
+    labels:
+      - traefik.group=appcheck-dev
+      - traefik.enable=true
+      - traefik.http.routers.appcheck.rule=PathPrefix(`/appcheck`)
+      - traefik.http.routers.appcheck.entrypoints=web
+      - traefik.http.routers.appcheck.priority=100
+      - traefik.http.services.appcheck.loadbalancer.server.port=8080
+      - traefik.http.routers.appcheck-healthz.rule=Path(`/healthz`)
+      - traefik.http.routers.appcheck-healthz.entrypoints=web
+      - traefik.http.routers.appcheck-healthz.priority=110
+      - traefik.http.routers.appcheck-readyz.rule=Path(`/readyz`)
+      - traefik.http.routers.appcheck-readyz.entrypoints=web
+      - traefik.http.routers.appcheck-readyz.priority=110

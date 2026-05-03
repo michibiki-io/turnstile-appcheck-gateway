@@ -18,6 +18,7 @@ import (
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit"
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/auth"
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/config"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/e2e"
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/firebaseappcheck"
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/handlers"
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/health"
@@ -63,54 +64,69 @@ func run() error {
 		})
 	}
 
-	normalizedCredsJSON, serviceAccount, err := auth.NormalizeJSON(cfg.ServiceAccountJSON)
-	if err != nil {
-		return fmt.Errorf("normalize service account json: %w", err)
-	}
-	privateKey, err := auth.ParseRSAPrivateKey(serviceAccount)
-	if err != nil {
-		return fmt.Errorf("parse service account key: %w", err)
-	}
-
 	ctx := context.Background()
-	tokenSource, err := auth.NewTokenSource(ctx, normalizedCredsJSON,
-		"https://www.googleapis.com/auth/firebase",
-		"https://www.googleapis.com/auth/cloud-platform",
-	)
-	if err != nil {
-		return fmt.Errorf("create oauth token source: %w", err)
-	}
-
 	outboundHTTPClient := &http.Client{Timeout: cfg.RequestTimeout}
-	turnstileClient, err := turnstile.NewClient(outboundHTTPClient, cfg.TurnstileSecretKey, cfg.TurnstileSiteVerifyURL)
-	if err != nil {
-		return fmt.Errorf("create turnstile client: %w", err)
-	}
+	var turnstileVerifier turnstile.Verifier
+	var appCheckExchanger firebaseappcheck.Exchanger
+	var appCheckVerifier handlers.VerifyTokenVerifier
 
-	appCheckExchangeClient, err := firebaseappcheck.NewClient(
-		outboundHTTPClient,
-		tokenSource,
-		privateKey,
-		serviceAccount.ClientEmail,
-		cfg.FirebaseAppResource,
-		cfg.FirebaseAppID,
-		firebaseappcheck.CustomTokenOptions{
-			TTLMillis: ptrInt64(cfg.AppCheckTokenTTL.Milliseconds()),
-		},
-		logger,
-	)
-	if err != nil {
-		return fmt.Errorf("create firebase appcheck exchanger: %w", err)
-	}
+	if cfg.IsMockUpstreamMode() {
+		logger.Info("starting with mock upstream mode", "mode", cfg.E2E.UpstreamMode)
+		turnstileVerifier = e2e.NewMockTurnstileVerifier(cfg.E2E)
+		appCheckExchanger = e2e.NewMockAppCheckExchanger(cfg.E2E, cfg.AppCheckTokenTTL)
+		appCheckVerifier = e2e.NewMockVerifyTokenVerifier(cfg.E2E)
+	} else {
+		normalizedCredsJSON, serviceAccount, err := auth.NormalizeJSON(cfg.ServiceAccountJSON)
+		if err != nil {
+			return fmt.Errorf("normalize service account json: %w", err)
+		}
+		privateKey, err := auth.ParseRSAPrivateKey(serviceAccount)
+		if err != nil {
+			return fmt.Errorf("parse service account key: %w", err)
+		}
 
-	adminApp, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: cfg.FirebaseProjectID}, option.WithCredentialsJSON(normalizedCredsJSON))
-	if err != nil {
-		return fmt.Errorf("initialize firebase admin app: %w", err)
-	}
+		tokenSource, err := auth.NewTokenSource(ctx, normalizedCredsJSON,
+			"https://www.googleapis.com/auth/firebase",
+			"https://www.googleapis.com/auth/cloud-platform",
+		)
+		if err != nil {
+			return fmt.Errorf("create oauth token source: %w", err)
+		}
 
-	appCheckVerifier, err := adminApp.AppCheck(ctx)
-	if err != nil {
-		return fmt.Errorf("initialize firebase app check verifier: %w", err)
+		turnstileClient, err := turnstile.NewClient(outboundHTTPClient, cfg.TurnstileSecretKey, cfg.TurnstileSiteVerifyURL)
+		if err != nil {
+			return fmt.Errorf("create turnstile client: %w", err)
+		}
+
+		appCheckExchangeClient, err := firebaseappcheck.NewClient(
+			outboundHTTPClient,
+			tokenSource,
+			privateKey,
+			serviceAccount.ClientEmail,
+			cfg.FirebaseAppResource,
+			cfg.FirebaseAppID,
+			firebaseappcheck.CustomTokenOptions{
+				TTLMillis: ptrInt64(cfg.AppCheckTokenTTL.Milliseconds()),
+			},
+			logger,
+		)
+		if err != nil {
+			return fmt.Errorf("create firebase appcheck exchanger: %w", err)
+		}
+
+		adminApp, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: cfg.FirebaseProjectID}, option.WithCredentialsJSON(normalizedCredsJSON))
+		if err != nil {
+			return fmt.Errorf("initialize firebase admin app: %w", err)
+		}
+
+		adminVerifier, err := adminApp.AppCheck(ctx)
+		if err != nil {
+			return fmt.Errorf("initialize firebase app check verifier: %w", err)
+		}
+
+		turnstileVerifier = turnstileClient
+		appCheckExchanger = appCheckExchangeClient
+		appCheckVerifier = adminVerifier
 	}
 
 	exchangeHandler := &handlers.ExchangeHandler{
@@ -118,8 +134,8 @@ func run() error {
 		Timeout: func(parent context.Context) (context.Context, context.CancelFunc) {
 			return context.WithTimeout(parent, cfg.RequestTimeout)
 		},
-		TurnstileVerifier: turnstileClient,
-		Exchanger:         appCheckExchangeClient,
+		TurnstileVerifier: turnstileVerifier,
+		Exchanger:         appCheckExchanger,
 		TrustProxyHeaders: cfg.TrustProxyHeaders,
 		OriginAllowed:     cfg.IsExchangeOriginAllowed,
 		Audit:             auditRecorder,
