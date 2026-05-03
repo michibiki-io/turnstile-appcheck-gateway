@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,6 +99,51 @@ func TestExchangeHandlerTurnstileFailure(t *testing.T) {
 	r.POST("/exchange", h.Handle)
 
 	req := httptest.NewRequest(http.MethodPost, "/exchange", bytes.NewBufferString(`{"turnstileToken":"token"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+}
+
+func TestExchangeHandlerRejectsUnknownField(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &ExchangeHandler{
+		Logger:            slog.Default(),
+		Timeout:           context.WithCancel,
+		TurnstileVerifier: exchangeTurnstileStub{resp: &turnstile.VerifyResponse{Success: true}},
+		Exchanger:         exchangeStub{result: &firebaseappcheck.ExchangeResult{Token: "appcheck-token", ExpireTimeMillis: 1000}},
+	}
+
+	r := gin.New()
+	r.POST("/exchange", h.Handle)
+
+	req := httptest.NewRequest(http.MethodPost, "/exchange", bytes.NewBufferString(`{"turnstileToken":"token","unexpected":"attack"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+}
+
+func TestExchangeHandlerRejectsOversizedToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &ExchangeHandler{
+		Logger:            slog.Default(),
+		Timeout:           context.WithCancel,
+		TurnstileVerifier: exchangeTurnstileStub{resp: &turnstile.VerifyResponse{Success: true}},
+		Exchanger:         exchangeStub{result: &firebaseappcheck.ExchangeResult{Token: "appcheck-token", ExpireTimeMillis: 1000}},
+	}
+
+	r := gin.New()
+	r.POST("/exchange", h.Handle)
+
+	payload := `{"turnstileToken":"` + strings.Repeat("a", 4097) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/exchange", bytes.NewBufferString(payload))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

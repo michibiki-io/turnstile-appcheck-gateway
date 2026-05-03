@@ -1,0 +1,34 @@
+name: helm-e2e
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "go.mod"
+      - "go.sum"
+      - "**/*.go"
+      - "frontend/**"
+      - "deploy/chart/**"
+      - "internal/**"
+      - "cmd/**"
+      - "scripts/helm-e2e-kind.sh"
+      - "scripts/e2e-smoke-mock.sh"
+      - "Makefile"
+      - ".github/workflows/helm-e2e.yml"
+
+jobs:
+  helm-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Set up kind
+        uses: engineerd/setup-kind@v0.6.2
+
+      - name: Run Helm chart mock e2e on kind
+        run: |
+          KEEP_ON_FAILURE=false make e2e-kind-mock

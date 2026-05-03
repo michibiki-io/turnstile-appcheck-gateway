@@ -129,6 +129,18 @@
 
         <label for="turnstileToken">Turnstile token</label>
         <textarea id="turnstileToken" placeholder="Turnstileウィジェットで得たtokenを貼り付け"></textarea>
+        <label for="realE2ESnippet">Local real e2e continuation snippet</label>
+        <textarea
+          id="realE2ESnippet"
+          readonly
+          placeholder="token取得後に、repo rootで再開用snippetを実行できます"
+        ></textarea>
+        <div class="row">
+          <button class="secondary" id="copyRealE2ESnippetBtn" type="button">snippetをコピー</button>
+        </div>
+        <div class="hint">
+          `scripts/e2e-real-local.sh` が manual full-real 準備 mode で起動された場合、この snippet で e2e を継続できます。
+        </div>
 
         <label>
           <input id="limitedUse" type="checkbox" />
@@ -172,11 +184,53 @@
       const widgetContainer = document.getElementById("turnstileWidget");
       const turnstileStatus = document.getElementById("turnstileStatus");
       const appCheckExpiry = document.getElementById("appCheckExpiry");
+      const realE2ESnippet = document.getElementById("realE2ESnippet");
       const TURNSTILE_SITE_KEY_STORAGE = "turnstile-site-key";
       const rawInjectedSiteKey = "__TURNSTILE_SITE_KEY__";
       const injectedSiteKey =
         rawInjectedSiteKey === "__TURNSTILE_SITE_KEY__" ? "" : rawInjectedSiteKey.trim();
       let widgetId = null;
+      const params = new URLSearchParams(window.location.search);
+
+      function shellEscapeSingleQuote(value) {
+        return String(value || "").replace(/'/g, "'\"'\"'");
+      }
+
+      function renderRealE2ESnippet(token) {
+        const stateDir = (params.get("e2e_state_dir") || "").trim();
+        const envFile = (params.get("e2e_env_file") || "").trim();
+        if (!token || !stateDir) {
+          realE2ESnippet.value = "";
+          return;
+        }
+        const parts = [
+          `ENV_FILE='${shellEscapeSingleQuote(envFile)}'`,
+          `REAL_E2E_LOCAL_STATE_DIR='${shellEscapeSingleQuote(stateDir)}'`,
+          `REAL_E2E_TURNSTILE_TOKEN='${shellEscapeSingleQuote(token)}'`,
+          "./scripts/e2e-real-local.sh --continue"
+        ];
+        realE2ESnippet.value = parts.join(" ");
+      }
+
+      async function copyText(textarea) {
+        const value = textarea.value;
+        if (!value) {
+          throw new Error("copy source is empty");
+        }
+
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(value);
+          return;
+        }
+
+        textarea.focus();
+        textarea.select();
+        textarea.setSelectionRange(0, value.length);
+        const ok = document.execCommand("copy");
+        if (!ok) {
+          throw new Error("clipboard copy fallback failed");
+        }
+      }
 
       function setOutput(label, payload) {
         output.textContent = `[${new Date().toISOString()}] ${label}\n${
@@ -191,12 +245,14 @@
       function getTurnstileToken() {
         const manual = turnstileTokenInput.value.trim();
         if (manual) {
+          renderRealE2ESnippet(manual);
           return manual;
         }
         if (window.turnstile && widgetId !== null) {
           const tokenFromWidget = window.turnstile.getResponse(widgetId) || "";
           if (tokenFromWidget) {
             turnstileTokenInput.value = tokenFromWidget;
+            renderRealE2ESnippet(tokenFromWidget);
             return tokenFromWidget;
           }
         }
@@ -233,19 +289,23 @@
         }
         widgetContainer.innerHTML = "";
         turnstileTokenInput.value = "";
+        renderRealE2ESnippet("");
 
         widgetId = window.turnstile.render(widgetContainer, {
           sitekey: siteKey,
           callback: (token) => {
             turnstileTokenInput.value = token;
+            renderRealE2ESnippet(token);
             setTurnstileStatus("Turnstile token を取得しました。");
           },
           "expired-callback": () => {
             turnstileTokenInput.value = "";
+            renderRealE2ESnippet("");
             setTurnstileStatus("Turnstile token が期限切れです。再度認証してください。");
           },
           "error-callback": () => {
             turnstileTokenInput.value = "";
+            renderRealE2ESnippet("");
             setTurnstileStatus("Turnstile の検証でエラーが発生しました。");
           }
         });
@@ -258,6 +318,7 @@
           window.turnstile.reset(widgetId);
         }
         turnstileTokenInput.value = "";
+        renderRealE2ESnippet("");
         setTurnstileStatus("Turnstile をリセットしました。");
       }
 
@@ -388,6 +449,24 @@
         appCheckExpiry.textContent = "有効期限: 未取得";
       });
 
+      turnstileTokenInput.addEventListener("input", () => {
+        renderRealE2ESnippet(turnstileTokenInput.value.trim());
+      });
+
+      document.getElementById("copyRealE2ESnippetBtn").addEventListener("click", async () => {
+        const snippet = realE2ESnippet.value.trim();
+        if (!snippet) {
+          setOutput("snippet", "continuation snippet はまだ生成されていません。");
+          return;
+        }
+        try {
+          await copyText(realE2ESnippet);
+          setOutput("snippet", "continuation snippet を clipboard にコピーしました。");
+        } catch (err) {
+          setOutput("snippet-copy-error", String(err));
+        }
+      });
+
       document.getElementById("renderWidgetBtn").addEventListener("click", async () => {
         try {
           await renderTurnstileWidget();
@@ -401,7 +480,6 @@
       });
 
       (function initSiteKey() {
-        const params = new URLSearchParams(window.location.search);
         const fromQuery = (params.get("sitekey") || "").trim();
         const fromStorage = (localStorage.getItem(TURNSTILE_SITE_KEY_STORAGE) || "").trim();
         const initial = fromQuery || fromStorage || injectedSiteKey;
@@ -411,6 +489,7 @@
             setTurnstileStatus(`初期描画失敗: ${String(err)}`);
           });
         }
+        renderRealE2ESnippet(turnstileTokenInput.value.trim());
       })();
     </script>
   </body>

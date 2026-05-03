@@ -21,7 +21,7 @@
   - [設定](#設定)
   - [管理ダッシュボードと監査ログ](#管理ダッシュボードと監査ログ)
   - [Firebase Web CustomProvider](#firebase-web-customprovider)
-  - [開発起動](#開発起動)
+  - [開発モードで立ち上げ](#開発モードで立ち上げ)
   - [ビルド](#ビルド)
 - [References](#references)
 
@@ -315,17 +315,7 @@ npm run check
 npm run build
 ```
 
-Run tests:
-
-```bash
-go test ./...
-```
-
-When local Go is unavailable:
-
-```bash
-docker run --rm -v "$PWD":/src -w /src golang:1.26.2 sh -lc '/usr/local/go/bin/go test ./...'
-```
+For contributor-focused test, CI, and release notes, see [docs/e2e-and-release.md](docs/e2e-and-release.md).
 
 ### English Build
 
@@ -359,8 +349,6 @@ docker buildx build \
   --push \
   ./
 ```
-
-Release automation runs for Pull Requests merged from `feature/**` into `main`. It computes the next release version from PR title/body and commit messages, creates a `vX.Y.Z` tag, publishes GHCR images, and creates a GitHub Release.
 
 ## 日本語
 
@@ -596,7 +584,7 @@ initializeAppCheck(firebaseApp, {
 <div id="turnstile-widget"></div>
 ```
 
-### 開発起動
+### 開発モードで立ち上げ
 
 Docker で service を起動します。
 
@@ -641,17 +629,7 @@ npm run check
 npm run build
 ```
 
-test:
-
-```bash
-go test ./...
-```
-
-local Go が無い場合:
-
-```bash
-docker run --rm -v "$PWD":/src -w /src golang:1.26.2 sh -lc '/usr/local/go/bin/go test ./...'
-```
+contributor / operator 向けの test、CI、release 運用メモは [docs/e2e-and-release.md](docs/e2e-and-release.md) を参照してください。
 
 ### ビルド
 
@@ -685,8 +663,6 @@ docker buildx build \
   --push \
   ./
 ```
-
-Release automation は `feature/**` から `main` へ merge された Pull Request を契機に実行されます。PR title / body / commit messages から次の release version を計算し、`vX.Y.Z` tag、GHCR image、GitHub Release を作成します。
 
 ## References
 

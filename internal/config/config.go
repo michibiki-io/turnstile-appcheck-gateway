@@ -33,6 +33,10 @@ const (
 	defaultAuditRetentionDays = 90
 	defaultRateLimitRequests  = 120
 	defaultRateLimitWindow    = time.Minute
+	defaultE2ETurnstilePass   = "e2e-turnstile-pass"
+	defaultE2ETurnstileFail   = "e2e-turnstile-fail"
+	defaultE2EAppCheckToken   = "e2e-appcheck-valid-token"
+	defaultE2EAppCheckAppID   = "e2e-app-id"
 )
 
 // Config is the runtime configuration built from environment variables.
@@ -63,9 +67,18 @@ type Config struct {
 	HealthPath string
 	ReadyPath  string
 
+	E2E       E2EConfig
 	Admin     AdminConfig
 	Audit     AuditConfig
 	RateLimit RateLimitConfig
+}
+
+type E2EConfig struct {
+	UpstreamMode       string
+	TurnstilePassToken string
+	TurnstileFailToken string
+	AppCheckToken      string
+	AppCheckAppID      string
 }
 
 type AdminConfig struct {
@@ -128,6 +141,13 @@ func loadFromMap(env map[string]string) (*Config, error) {
 		VerifyFailureStatus:    defaultVerifyFailure,
 		HealthPath:             normalizeHealthPath(getOrDefault(env, "HEALTH_PATH", defaultHealthPath)),
 		ReadyPath:              normalizeHealthPath(getOrDefault(env, "READY_PATH", defaultReadyPath)),
+		E2E: E2EConfig{
+			UpstreamMode:       strings.ToLower(strings.TrimSpace(env["E2E_UPSTREAM_MODE"])),
+			TurnstilePassToken: strings.TrimSpace(getOrDefault(env, "E2E_TURNSTILE_PASS_TOKEN", defaultE2ETurnstilePass)),
+			TurnstileFailToken: strings.TrimSpace(getOrDefault(env, "E2E_TURNSTILE_FAIL_TOKEN", defaultE2ETurnstileFail)),
+			AppCheckToken:      strings.TrimSpace(getOrDefault(env, "E2E_APPCHECK_TOKEN", defaultE2EAppCheckToken)),
+			AppCheckAppID:      strings.TrimSpace(getOrDefault(env, "E2E_APPCHECK_APP_ID", defaultE2EAppCheckAppID)),
+		},
 		Admin: AdminConfig{
 			Dashboard: AdminDashboardConfig{
 				Enabled:           true,
@@ -157,32 +177,56 @@ func loadFromMap(env map[string]string) (*Config, error) {
 		},
 	}
 
-	var missing []string
-
-	cfg.TurnstileSecretKey = strings.TrimSpace(env["TURNSTILE_SECRET_KEY"])
-	if cfg.TurnstileSecretKey == "" {
-		missing = append(missing, "TURNSTILE_SECRET_KEY")
+	switch cfg.E2E.UpstreamMode {
+	case "", "mock":
+	default:
+		return nil, fmt.Errorf("E2E_UPSTREAM_MODE must be empty or mock")
 	}
+	if cfg.IsMockUpstreamMode() {
+		if cfg.E2E.TurnstilePassToken == "" {
+			return nil, fmt.Errorf("E2E_TURNSTILE_PASS_TOKEN is required when E2E_UPSTREAM_MODE=mock")
+		}
+		if cfg.E2E.TurnstileFailToken == "" {
+			return nil, fmt.Errorf("E2E_TURNSTILE_FAIL_TOKEN is required when E2E_UPSTREAM_MODE=mock")
+		}
+		if cfg.E2E.TurnstilePassToken == cfg.E2E.TurnstileFailToken {
+			return nil, fmt.Errorf("E2E_TURNSTILE_PASS_TOKEN and E2E_TURNSTILE_FAIL_TOKEN must differ")
+		}
+		if cfg.E2E.AppCheckToken == "" {
+			return nil, fmt.Errorf("E2E_APPCHECK_TOKEN is required when E2E_UPSTREAM_MODE=mock")
+		}
+		if cfg.E2E.AppCheckAppID == "" {
+			return nil, fmt.Errorf("E2E_APPCHECK_APP_ID is required when E2E_UPSTREAM_MODE=mock")
+		}
+	}
+
+	var missing []string
 
 	cfg.FirebaseProjectID = strings.TrimSpace(env["FIREBASE_PROJECT_ID"])
 	cfg.FirebaseAppID = strings.TrimSpace(env["FIREBASE_APP_ID"])
 	cfg.FirebaseAppResource = strings.TrimSpace(env["FIREBASE_APP_RESOURCE"])
-
-	if cfg.FirebaseProjectID == "" {
-		missing = append(missing, "FIREBASE_PROJECT_ID")
-	}
-	if cfg.FirebaseAppResource == "" && cfg.FirebaseAppID == "" {
-		missing = append(missing, "FIREBASE_APP_ID (required when FIREBASE_APP_RESOURCE is not set)")
-	}
-
 	var err error
-	cfg.ServiceAccountJSON, err = readServiceAccountJSON(env)
-	if err != nil {
-		missing = append(missing, err.Error())
-	}
+	if !cfg.IsMockUpstreamMode() {
+		cfg.TurnstileSecretKey = strings.TrimSpace(env["TURNSTILE_SECRET_KEY"])
+		if cfg.TurnstileSecretKey == "" {
+			missing = append(missing, "TURNSTILE_SECRET_KEY")
+		}
 
-	if cfg.FirebaseAppResource == "" && cfg.FirebaseProjectID != "" && cfg.FirebaseAppID != "" {
-		cfg.FirebaseAppResource = fmt.Sprintf("projects/%s/apps/%s", cfg.FirebaseProjectID, cfg.FirebaseAppID)
+		if cfg.FirebaseProjectID == "" {
+			missing = append(missing, "FIREBASE_PROJECT_ID")
+		}
+		if cfg.FirebaseAppResource == "" && cfg.FirebaseAppID == "" {
+			missing = append(missing, "FIREBASE_APP_ID (required when FIREBASE_APP_RESOURCE is not set)")
+		}
+
+		cfg.ServiceAccountJSON, err = readServiceAccountJSON(env)
+		if err != nil {
+			missing = append(missing, err.Error())
+		}
+
+		if cfg.FirebaseAppResource == "" && cfg.FirebaseProjectID != "" && cfg.FirebaseAppID != "" {
+			cfg.FirebaseAppResource = fmt.Sprintf("projects/%s/apps/%s", cfg.FirebaseProjectID, cfg.FirebaseAppID)
+		}
 	}
 
 	if timeoutRaw := strings.TrimSpace(env["REQUEST_TIMEOUT"]); timeoutRaw != "" {
@@ -303,14 +347,20 @@ func loadFromMap(env map[string]string) (*Config, error) {
 		return nil, errors.New("missing/invalid required configuration: " + strings.Join(missing, ", "))
 	}
 
-	if !isValidAppResource(cfg.FirebaseAppResource) {
-		return nil, fmt.Errorf("invalid FIREBASE_APP_RESOURCE: %q", cfg.FirebaseAppResource)
-	}
-	if cfg.FirebaseAppID == "" {
-		cfg.FirebaseAppID = appIDFromResource(cfg.FirebaseAppResource)
+	if !cfg.IsMockUpstreamMode() {
+		if !isValidAppResource(cfg.FirebaseAppResource) {
+			return nil, fmt.Errorf("invalid FIREBASE_APP_RESOURCE: %q", cfg.FirebaseAppResource)
+		}
+		if cfg.FirebaseAppID == "" {
+			cfg.FirebaseAppID = appIDFromResource(cfg.FirebaseAppResource)
+		}
 	}
 
 	return cfg, nil
+}
+
+func (c *Config) IsMockUpstreamMode() bool {
+	return c != nil && c.E2E.UpstreamMode == "mock"
 }
 
 // IsExchangeOriginAllowed returns whether origin is allowed. Empty allow-list means allow all.

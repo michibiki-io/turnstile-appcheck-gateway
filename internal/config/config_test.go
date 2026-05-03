@@ -173,6 +173,33 @@ func TestLoadFromMapMissingRequired(t *testing.T) {
 	}
 }
 
+func TestLoadFromMapMockModeSkipsRealUpstreamRequirements(t *testing.T) {
+	cfg, err := loadFromMap(map[string]string{
+		"E2E_UPSTREAM_MODE": "mock",
+	})
+	if err != nil {
+		t.Fatalf("loadFromMap() error = %v", err)
+	}
+	if !cfg.IsMockUpstreamMode() {
+		t.Fatal("expected mock upstream mode to be enabled")
+	}
+	if cfg.E2E.TurnstilePassToken != "e2e-turnstile-pass" {
+		t.Fatalf("TurnstilePassToken = %q", cfg.E2E.TurnstilePassToken)
+	}
+	if cfg.E2E.AppCheckToken != "e2e-appcheck-valid-token" {
+		t.Fatalf("AppCheckToken = %q", cfg.E2E.AppCheckToken)
+	}
+}
+
+func TestLoadFromMapRejectsInvalidMockMode(t *testing.T) {
+	_, err := loadFromMap(map[string]string{
+		"E2E_UPSTREAM_MODE": "real",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid E2E_UPSTREAM_MODE")
+	}
+}
+
 func TestIsExchangeOriginAllowed(t *testing.T) {
 	env := minimalEnv()
 	env["ALLOWED_EXCHANGE_ORIGINS"] = "https://example.com,https://www.example.com"
