@@ -99,12 +99,50 @@ Workflow:
 
 This workflow validates the selected code but does not create tags, push images, push Helm charts, or create a GitHub Release.
 
+### Local workflow rehearsal with act
+
+You can rehearse the `release-e2e` workflow locally with `act` before pushing.
+
+Install `act`:
+
+```bash
+brew install act
+```
+
+Alternative official installer:
+
+```bash
+curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+```
+
+Commands:
+
+```bash
+make act-release-e2e
+REF=main make act-release-e2e
+ENV_FILE=.env make act-release-e2e
+```
+
+Notes:
+
+- Installing the host `act` binary is recommended for repeated use because it is faster than the Dockerized fallback
+- The helper looks for `./bin/act` first, then `act` on `PATH`, then Dockerized fallback
+- The helper resolves `GITHUB_TOKEN` from `GITHUB_TOKEN`, then `GH_TOKEN`, then `gh auth token`
+- On Linux, the helper passes the host Docker socket group ID to the `act` runner container
+- The helper script defaults to `dev/.env`, then `.env`
+- The helper passes the same Firebase secrets that the workflow expects
+- `REAL_E2E_TURNSTILE_TOKEN` is optional here too
+- If the local `act` binary is not installed, the helper falls back to a Dockerized `act` runner
+- This is a local rehearsal, not a perfect substitute for a GitHub-hosted runner
+- Docker must be installed locally
+
 ### Relevant files
 
 - `.github/workflows/compose-e2e.yml`
 - `.github/workflows/helm-e2e.yml`
 - `.github/workflows/release.yml`
 - `.github/workflows/release-e2e.yml`
+- `scripts/act-release-e2e.sh`
 - `scripts/e2e-smoke-mock.sh`
 - `scripts/helm-e2e-kind.sh`
 - `scripts/e2e-real-local.sh`
@@ -209,12 +247,50 @@ Workflow:
 
 この workflow は選択した code を検証しますが、tag 作成、image push、Helm chart push、GitHub Release 作成は行いません。
 
+### act による local workflow rehearsal
+
+push 前に `release-e2e` workflow を local で rehearse したい場合は `act` を使えます。
+
+`act` の install:
+
+```bash
+brew install act
+```
+
+代替の公式 installer:
+
+```bash
+curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+```
+
+実行コマンド:
+
+```bash
+make act-release-e2e
+REF=main make act-release-e2e
+ENV_FILE=.env make act-release-e2e
+```
+
+注意:
+
+- 繰り返し使うなら、Docker fallback より host の `act` binary を install した方が速いです
+- helper はまず `./bin/act`、次に `PATH` 上の `act`、最後に Dockerized fallback を探します
+- helper は `GITHUB_TOKEN`、次に `GH_TOKEN`、最後に `gh auth token` の順で GitHub token を解決します
+- Linux では helper が host の Docker socket の group ID を `act` runner container に渡します
+- helper script は既定で `dev/.env`、無ければ `.env` を使います
+- workflow が期待する Firebase secrets をそのまま `act` に渡します
+- `REAL_E2E_TURNSTILE_TOKEN` はここでも optional です
+- local に `act` binary が無い場合は、helper が Dockerized `act` fallback を使います
+- これは local rehearsal であり、GitHub hosted runner の完全な代替ではありません
+- local に Docker が必要です
+
 ### 関連ファイル
 
 - `.github/workflows/compose-e2e.yml`
 - `.github/workflows/helm-e2e.yml`
 - `.github/workflows/release.yml`
 - `.github/workflows/release-e2e.yml`
+- `scripts/act-release-e2e.sh`
 - `scripts/e2e-smoke-mock.sh`
 - `scripts/helm-e2e-kind.sh`
 - `scripts/e2e-real-local.sh`

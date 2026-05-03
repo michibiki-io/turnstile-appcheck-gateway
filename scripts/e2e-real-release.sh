@@ -42,6 +42,12 @@ dump_debug() {
 
 trap 'dump_debug' ERR
 
+fail() {
+  echo "$1" >&2
+  dump_debug
+  exit 1
+}
+
 run_curl() {
   local outfile="$1"
   local method="$2"
@@ -85,8 +91,7 @@ wait_for_status() {
     fi
     sleep 2
   done
-  echo "${label}: service did not become ready" >&2
-  exit 1
+  fail "${label}: service did not become ready"
 }
 
 extract_json_field() {
@@ -135,8 +140,7 @@ check_logs_for_secret() {
     "${TURNSTILE_TOKEN:-}" \
     "${APP_CHECK_TOKEN:-}"; do
     if [[ -n "${marker}" ]] && grep -Fq "${marker}" "${compose_log}"; then
-      echo "compose logs leaked a secret or token" >&2
-      exit 1
+      fail "compose logs leaked a secret or token"
     fi
   done
 }
