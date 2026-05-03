@@ -1,0 +1,59 @@
+Release name: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+Service: {{ include "turnstile-appcheck-gateway.fullname" . }}
+Service port: {{ .Values.service.port }}
+
+Public endpoints:
+  Exchange: {{ include "turnstile-appcheck-gateway.appCheckSubpath" . }}/api/v1/exchange
+  Verify: {{ include "turnstile-appcheck-gateway.appCheckSubpath" . }}/api/v1/verify
+  Health: {{ include "turnstile-appcheck-gateway.healthPath" . }}
+  Readiness: {{ include "turnstile-appcheck-gateway.readyPath" . }}
+
+{{- if eq (lower (trim (default "true" (index .Values.config "ADMIN_DASHBOARD_ENABLED")))) "true" }}
+Admin dashboard: {{ include "turnstile-appcheck-gateway.adminDashboardPath" . }}
+Admin API prefix: {{ include "turnstile-appcheck-gateway.adminAPIPath" . }}
+{{- else }}
+Admin dashboard: disabled
+Admin API: disabled
+{{- end }}
+
+Audit SQLite path: {{ default "/var/lib/turnstile-appcheck-gateway/audit.db" (index .Values.config "AUDIT_SQLITE_PATH") }}
+Persistence:
+  Enabled: {{ .Values.persistence.enabled }}
+  Mount path: {{ include "turnstile-appcheck-gateway.dataMountPath" . }}
+  {{- if .Values.persistence.enabled }}
+  Claim: {{ include "turnstile-appcheck-gateway.pvcName" . }}
+  {{- else }}
+  Backend: emptyDir (audit history is lost when the Pod restarts)
+  {{- end }}
+
+{{- if .Values.ingress.enabled }}
+Ingress URLs:
+{{- range $host := .Values.ingress.hosts }}
+  {{- $paths := $host.paths | default (list (dict "path" (include "turnstile-appcheck-gateway.appCheckSubpath" $) "pathType" "Prefix")) }}
+  {{- range $path := $paths }}
+  - {{- if $.Values.ingress.tls }} https://{{ else }} http://{{ end }}{{ $host.host }}{{ $path.path }}
+  {{- end }}
+{{- end }}
+{{- else }}
+Ingress is disabled.
+To access the service locally:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "turnstile-appcheck-gateway.fullname" . }} 8080:{{ .Values.service.port }}
+{{- end }}
+
+{{- if .Values.existingSecret }}
+Secret source: existing Secret {{ .Values.existingSecret }}
+{{- else }}
+Secret source: created by this chart as {{ include "turnstile-appcheck-gateway.secretName" . }}
+{{- end }}
+
+Required sensitive keys:
+  - TURNSTILE_SECRET_KEY
+  - GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_JSON_BASE64
+
+{{- if eq (lower (trim (default "header" (index .Values.config "ADMIN_AUTH_MODE")))) "none" }}
+WARNING:
+  ADMIN_AUTH_MODE=none disables service-side admin authentication.
+  Protect {{ include "turnstile-appcheck-gateway.adminDashboardPath" . }} and {{ include "turnstile-appcheck-gateway.adminAPIPath" . }} with a trusted upstream auth layer.
+  Do not expose these paths directly to the public internet.
+{{- end }}

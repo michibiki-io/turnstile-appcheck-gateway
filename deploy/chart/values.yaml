@@ -1,0 +1,143 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/michibiki-io/turnstile-appcheck-gateway
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: false
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 80
+  externalName: ""
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: appcheck.example.com
+      paths:
+        - path: /appcheck
+          pathType: Prefix
+  tls: []
+
+resources: {}
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+startupProbe: null
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: null
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+persistence:
+  enabled: true
+  existingClaim: ""
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+  annotations: {}
+  mountPath: /var/lib/turnstile-appcheck-gateway
+
+config:
+  APPCHECK_SUBPATH: "/appcheck"
+  HTTP_ADDR: ":8080"
+  TURNSTILE_SITEVERIFY_URL: "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+  LOG_LEVEL: "info"
+  REQUEST_TIMEOUT: "10s"
+  APPCHECK_TOKEN_TTL: "30m"
+  ALLOWED_EXCHANGE_ORIGINS: ""
+  TRUST_PROXY_HEADERS: "false"
+  VERIFY_HEADER_NAME: "X-Firebase-AppCheck"
+  VERIFY_SUCCESS_STATUS: "204"
+  VERIFY_FAILURE_STATUS: "401"
+  HEALTH_PATH: "/healthz"
+  READY_PATH: "/readyz"
+
+  FIREBASE_PROJECT_ID: ""
+  FIREBASE_APP_ID: ""
+  FIREBASE_APP_RESOURCE: ""
+
+  ADMIN_DASHBOARD_ENABLED: "true"
+  ADMIN_BASE_PATH: "/admin"
+  ADMIN_AUDIT_TIMESTAMP_FORMAT: "2006-01-02 15:04:05 MST"
+  ADMIN_AUDIT_TIMESTAMP_TIMEZONE: "Asia/Tokyo"
+  ADMIN_AUTH_MODE: "header"
+  ADMIN_AUTH_USER_HEADER: "X-Forwarded-User"
+  ADMIN_AUTH_EMAIL_HEADER: "X-Forwarded-Email"
+  ADMIN_AUTH_GROUPS_HEADER: "X-Forwarded-Groups"
+  ADMIN_ALLOWED_USERS: ""
+  ADMIN_ALLOWED_GROUPS: "gateway-admins"
+
+  AUDIT_ENABLED: "true"
+  AUDIT_SQLITE_PATH: "/var/lib/turnstile-appcheck-gateway/audit.db"
+  AUDIT_RETENTION_DAYS: "90"
+
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_REQUESTS: "120"
+  RATE_LIMIT_WINDOW: "1m"
+
+secrets:
+  TURNSTILE_SECRET_KEY: ""
+  GOOGLE_SERVICE_ACCOUNT_JSON: ""
+  GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ""
+
+existingSecret: ""
+
+extraEnv: []
+extraEnvFrom: []
+extraVolumes: []
+extraVolumeMounts: []

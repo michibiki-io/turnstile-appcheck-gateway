@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "turnstile-appcheck-gateway.fullname" . }}
+  labels:
+    {{- include "turnstile-appcheck-gateway.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  {{- if .Values.persistence.enabled }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "turnstile-appcheck-gateway.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if not .Values.existingSecret }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "turnstile-appcheck-gateway.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "turnstile-appcheck-gateway.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ include "turnstile-appcheck-gateway.name" . }}
+          {{- $defaultLivenessProbe := dict "httpGet" (dict "path" (include "turnstile-appcheck-gateway.healthPath" .) "port" "http") "initialDelaySeconds" 10 "periodSeconds" 10 "timeoutSeconds" 2 "failureThreshold" 3 }}
+          {{- $defaultReadinessProbe := dict "httpGet" (dict "path" (include "turnstile-appcheck-gateway.readyPath" .) "port" "http") "initialDelaySeconds" 5 "periodSeconds" 5 "timeoutSeconds" 2 "failureThreshold" 3 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "turnstile-appcheck-gateway.configMapName" . }}
+            - secretRef:
+                name: {{ include "turnstile-appcheck-gateway.secretName" . }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          livenessProbe:
+            {{- toYaml (mergeOverwrite (deepCopy $defaultLivenessProbe) .Values.livenessProbe) | nindent 12 }}
+          readinessProbe:
+            {{- toYaml (mergeOverwrite (deepCopy $defaultReadinessProbe) .Values.readinessProbe) | nindent 12 }}
+          {{- with .Values.startupProbe }}
+          {{- $defaultStartupProbe := dict "httpGet" (dict "path" (include "turnstile-appcheck-gateway.healthPath" $) "port" "http") }}
+          startupProbe:
+            {{- toYaml (mergeOverwrite (deepCopy $defaultStartupProbe) .) | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: {{ include "turnstile-appcheck-gateway.dataMountPath" . }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "turnstile-appcheck-gateway.pvcName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

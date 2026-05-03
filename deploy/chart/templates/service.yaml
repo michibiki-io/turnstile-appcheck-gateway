@@ -1,0 +1,30 @@
+{{- if and (eq .Values.service.type "ExternalName") (not .Values.service.externalName) }}
+{{- fail "service.externalName is required when service.type is ExternalName" }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "turnstile-appcheck-gateway.fullname" . }}
+  labels:
+    {{- include "turnstile-appcheck-gateway.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- if eq .Values.service.type "ExternalName" }}
+  externalName: {{ .Values.service.externalName | quote }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      protocol: TCP
+  {{- else }}
+  selector:
+    {{- include "turnstile-appcheck-gateway.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+  {{- end }}
