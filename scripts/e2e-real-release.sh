@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 ENV_FILE="${TMP_DIR}/release.env"
+DEV_ENV_FILE="${ROOT_DIR}/dev/.env"
 HTTP_STATUS=""
 export TRAEFIK_PORT=8080
 export TRAEFIK_DASHBOARD_PORT=8088
@@ -27,6 +28,7 @@ require_env() {
 
 cleanup() {
   docker compose --env-file "${ENV_FILE}" -f "${ROOT_DIR}/dev/docker-compose.yml" -f "${TMP_DIR}/override.yml" down -v >/dev/null 2>&1 || true
+  rm -f "${DEV_ENV_FILE}" >/dev/null 2>&1 || true
   rm -rf "${TMP_DIR}"
 }
 trap cleanup EXIT
@@ -174,11 +176,11 @@ RATE_LIMIT_REQUESTS=120
 RATE_LIMIT_WINDOW=1m
 EOF
 
+cp "${ENV_FILE}" "${DEV_ENV_FILE}"
+
 cat > "${TMP_DIR}/override.yml" <<EOF
 services:
   turnstile-appcheck-gateway:
-    env_file:
-      - ${ENV_FILE}
     environment:
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY_EFFECTIVE}
       ADMIN_AUTH_MODE: header
