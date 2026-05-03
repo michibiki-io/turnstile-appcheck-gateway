@@ -83,7 +83,7 @@ Create the PVC name.
 Normalize the App Check subpath.
 */}}
 {{- define "turnstile-appcheck-gateway.appCheckSubpath" -}}
-{{- $subpath := trim (default "/appcheck" (index .Values.config "APPCHECK_SUBPATH")) -}}
+{{- $subpath := trim (printf "%v" (default "/appcheck" (index .Values.config "APPCHECK_SUBPATH"))) -}}
 {{- if eq $subpath "" -}}
 /appcheck
 {{- else if hasPrefix "/" $subpath -}}
@@ -97,7 +97,7 @@ Normalize the App Check subpath.
 Normalize the admin base path.
 */}}
 {{- define "turnstile-appcheck-gateway.adminBasePath" -}}
-{{- $base := trim (default "/admin" (index .Values.config "ADMIN_BASE_PATH")) -}}
+{{- $base := trim (printf "%v" (default "/admin" (index .Values.config "ADMIN_BASE_PATH"))) -}}
 {{- if eq $base "" -}}
 /admin
 {{- else if hasPrefix "/" $base -}}
@@ -111,14 +111,14 @@ Normalize the admin base path.
 Return the configured health path.
 */}}
 {{- define "turnstile-appcheck-gateway.healthPath" -}}
-{{- default "/healthz" (index .Values.config "HEALTH_PATH") -}}
+{{- printf "%v" (default "/healthz" (index .Values.config "HEALTH_PATH")) -}}
 {{- end -}}
 
 {{/*
 Return the configured readiness path.
 */}}
 {{- define "turnstile-appcheck-gateway.readyPath" -}}
-{{- default "/readyz" (index .Values.config "READY_PATH") -}}
+{{- printf "%v" (default "/readyz" (index .Values.config "READY_PATH")) -}}
 {{- end -}}
 
 {{/*

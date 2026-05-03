@@ -295,7 +295,12 @@
     "config": {
       "type": "object",
       "additionalProperties": {
-        "type": "string"
+        "type": [
+          "string",
+          "boolean",
+          "integer",
+          "number"
+        ]
       }
     },
     "secrets": {

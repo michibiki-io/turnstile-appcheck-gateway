@@ -130,7 +130,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/charts
-          helm lint ./deploy/chart
+          helm lint ./deploy/chart \
+            --set-string secrets.TURNSTILE_SECRET_KEY=dummy \
+            --set-string secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64=dummy
           helm package ./deploy/chart \
             --version "${{ steps.version.outputs.docker_tag }}" \
             --app-version "${{ steps.version.outputs.docker_tag }}" \
