@@ -33,6 +33,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
+dump_debug() {
+  echo "release e2e debug: docker compose ps" >&2
+  docker compose --env-file "${ENV_FILE}" -f "${ROOT_DIR}/dev/docker-compose.yml" -f "${TMP_DIR}/override.yml" ps >&2 || true
+  echo "release e2e debug: docker compose logs" >&2
+  docker compose --env-file "${ENV_FILE}" -f "${ROOT_DIR}/dev/docker-compose.yml" -f "${TMP_DIR}/override.yml" logs --no-color >&2 || true
+}
+
+trap 'dump_debug' ERR
+
 run_curl() {
   local outfile="$1"
   local method="$2"
