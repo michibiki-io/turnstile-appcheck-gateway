@@ -87,11 +87,24 @@ Optional GitHub Secrets:
 
 The default release path is half-real, so Turnstile secrets are not required unless the optional full-real path is enabled.
 
+### Manual branch validation
+
+You can also run the same release-oriented integration e2e manually on any branch, tag, or SHA through GitHub Actions.
+
+Workflow:
+
+- `Actions` -> `release-e2e`
+- optionally set `ref`
+- run the workflow
+
+This workflow validates the selected code but does not create tags, push images, push Helm charts, or create a GitHub Release.
+
 ### Relevant files
 
 - `.github/workflows/compose-e2e.yml`
 - `.github/workflows/helm-e2e.yml`
 - `.github/workflows/release.yml`
+- `.github/workflows/release-e2e.yml`
 - `scripts/e2e-smoke-mock.sh`
 - `scripts/helm-e2e-kind.sh`
 - `scripts/e2e-real-local.sh`
@@ -184,11 +197,24 @@ release mode:
 
 既定 path は half-real なので、optional な full-real を使わない限り Turnstile secret は不要です。
 
+### 任意 branch の手動検証
+
+GitHub Actions から、同じ release 向け integration e2e を任意 branch / tag / SHA に対して手動実行できます。
+
+Workflow:
+
+- `Actions` -> `release-e2e`
+- 必要なら `ref` を指定
+- 実行
+
+この workflow は選択した code を検証しますが、tag 作成、image push、Helm chart push、GitHub Release 作成は行いません。
+
 ### 関連ファイル
 
 - `.github/workflows/compose-e2e.yml`
 - `.github/workflows/helm-e2e.yml`
 - `.github/workflows/release.yml`
+- `.github/workflows/release-e2e.yml`
 - `scripts/e2e-smoke-mock.sh`
 - `scripts/helm-e2e-kind.sh`
 - `scripts/e2e-real-local.sh`
