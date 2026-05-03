@@ -1,0 +1,57 @@
+name: release-e2e
+
+run-name: >-
+  release-e2e (${{ github.event.inputs.ref || github.ref_name }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or SHA to validate. Leave empty to use the selected branch.
+        required: false
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-e2e-${{ github.event.inputs.ref || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release-e2e:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+
+    steps:
+      - name: Check out target ref
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Show target ref
+        run: |
+          set -euo pipefail
+          echo "validated commit: ${GITHUB_SHA}"
+          git rev-parse --short HEAD
+          git branch --show-current || true
+
+      - name: Run release integration e2e
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_APP_RESOURCE: ${{ secrets.FIREBASE_APP_RESOURCE }}
+          GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          REAL_E2E_TURNSTILE_TOKEN: ${{ secrets.REAL_E2E_TURNSTILE_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Default path is dummy Turnstile + real Firebase.
+          # Only when REAL_E2E_TURNSTILE_TOKEN is supplied does the script switch to full-real.
+          ./scripts/e2e-real-release.sh
