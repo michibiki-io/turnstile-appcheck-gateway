@@ -177,6 +177,8 @@ EOF
 cat > "${TMP_DIR}/override.yml" <<EOF
 services:
   turnstile-appcheck-gateway:
+    env_file:
+      - ${ENV_FILE}
     environment:
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY_EFFECTIVE}
       ADMIN_AUTH_MODE: header
