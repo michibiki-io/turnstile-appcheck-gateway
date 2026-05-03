@@ -10,11 +10,11 @@ import (
 	firebaseappchecksdk "firebase.google.com/go/v4/appcheck"
 	"github.com/gin-gonic/gin"
 
-	"github.com/example/turnstile-appcheck-gateway/internal/config"
-	"github.com/example/turnstile-appcheck-gateway/internal/firebaseappcheck"
-	"github.com/example/turnstile-appcheck-gateway/internal/handlers"
-	"github.com/example/turnstile-appcheck-gateway/internal/health"
-	"github.com/example/turnstile-appcheck-gateway/internal/turnstile"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/config"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/firebaseappcheck"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/handlers"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/health"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/turnstile"
 )
 
 func TestJoinSubpath(t *testing.T) {

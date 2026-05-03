@@ -72,7 +72,6 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Tag the PR merge commit directly so a newer main HEAD cannot move the release target.
           git tag -a "${GIT_TAG}" "${MERGE_COMMIT_SHA}" -m "Release ${GIT_TAG}"
           git push origin "refs/tags/${GIT_TAG}"
 
@@ -114,6 +113,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_VERSION=${{ steps.version.outputs.docker_tag }}
+            BUILD_COMMIT=${{ env.MERGE_COMMIT_SHA }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: mode=max

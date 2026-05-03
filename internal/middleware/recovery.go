@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/example/turnstile-appcheck-gateway/internal/model"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/model"
 )
 
 // Recovery captures panics and returns a stable JSON error payload.

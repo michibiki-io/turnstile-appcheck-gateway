@@ -26,6 +26,13 @@ const (
 	defaultVerifyFailure      = 401
 	defaultHealthPath         = "/healthz"
 	defaultReadyPath          = "/readyz"
+	defaultAdminBasePath      = "/admin"
+	defaultTimestampFormat    = "2006-01-02 15:04:05 MST"
+	defaultTimestampTimezone  = "Asia/Tokyo"
+	defaultAuditSQLitePath    = "/var/lib/turnstile-appcheck-gateway/audit.db"
+	defaultAuditRetentionDays = 90
+	defaultRateLimitRequests  = 120
+	defaultRateLimitWindow    = time.Minute
 )
 
 // Config is the runtime configuration built from environment variables.
@@ -55,6 +62,44 @@ type Config struct {
 
 	HealthPath string
 	ReadyPath  string
+
+	Admin     AdminConfig
+	Audit     AuditConfig
+	RateLimit RateLimitConfig
+}
+
+type AdminConfig struct {
+	Dashboard AdminDashboardConfig
+	Auth      AdminAuthConfig
+}
+
+type AdminDashboardConfig struct {
+	Enabled           bool
+	BasePath          string
+	TimestampFormat   string
+	TimestampTimezone string
+}
+
+type AdminAuthConfig struct {
+	Mode          string
+	UserHeader    string
+	EmailHeader   string
+	GroupsHeader  string
+	AllowedUsers  []string
+	AllowedGroups []string
+}
+
+type AuditConfig struct {
+	Enabled       bool
+	StorageType   string
+	SQLitePath    string
+	RetentionDays int
+}
+
+type RateLimitConfig struct {
+	Enabled           bool
+	RequestsPerWindow int
+	Window            time.Duration
 }
 
 // Load reads and validates configuration from environment variables.
@@ -83,6 +128,33 @@ func loadFromMap(env map[string]string) (*Config, error) {
 		VerifyFailureStatus:    defaultVerifyFailure,
 		HealthPath:             normalizeHealthPath(getOrDefault(env, "HEALTH_PATH", defaultHealthPath)),
 		ReadyPath:              normalizeHealthPath(getOrDefault(env, "READY_PATH", defaultReadyPath)),
+		Admin: AdminConfig{
+			Dashboard: AdminDashboardConfig{
+				Enabled:           true,
+				BasePath:          normalizeSubpath(getOrDefault(env, "ADMIN_BASE_PATH", defaultAdminBasePath)),
+				TimestampFormat:   strings.TrimSpace(getOrDefault(env, "ADMIN_AUDIT_TIMESTAMP_FORMAT", defaultTimestampFormat)),
+				TimestampTimezone: strings.TrimSpace(getOrDefault(env, "ADMIN_AUDIT_TIMESTAMP_TIMEZONE", defaultTimestampTimezone)),
+			},
+			Auth: AdminAuthConfig{
+				Mode:          strings.ToLower(strings.TrimSpace(getOrDefault(env, "ADMIN_AUTH_MODE", "header"))),
+				UserHeader:    strings.TrimSpace(getOrDefault(env, "ADMIN_AUTH_USER_HEADER", "X-Forwarded-User")),
+				EmailHeader:   strings.TrimSpace(getOrDefault(env, "ADMIN_AUTH_EMAIL_HEADER", "X-Forwarded-Email")),
+				GroupsHeader:  strings.TrimSpace(getOrDefault(env, "ADMIN_AUTH_GROUPS_HEADER", "X-Forwarded-Groups")),
+				AllowedUsers:  parseCSV(env["ADMIN_ALLOWED_USERS"]),
+				AllowedGroups: parseCSV(getOrDefault(env, "ADMIN_ALLOWED_GROUPS", "gateway-admins")),
+			},
+		},
+		Audit: AuditConfig{
+			Enabled:       true,
+			StorageType:   "sqlite",
+			SQLitePath:    strings.TrimSpace(getOrDefault(env, "AUDIT_SQLITE_PATH", defaultAuditSQLitePath)),
+			RetentionDays: defaultAuditRetentionDays,
+		},
+		RateLimit: RateLimitConfig{
+			Enabled:           true,
+			RequestsPerWindow: defaultRateLimitRequests,
+			Window:            defaultRateLimitWindow,
+		},
 	}
 
 	var missing []string
@@ -134,6 +206,59 @@ func loadFromMap(env map[string]string) (*Config, error) {
 		cfg.TrustProxyHeaders, err = strconv.ParseBool(trustRaw)
 		if err != nil {
 			return nil, fmt.Errorf("invalid TRUST_PROXY_HEADERS: %q", trustRaw)
+		}
+	}
+
+	if raw := strings.TrimSpace(env["ADMIN_DASHBOARD_ENABLED"]); raw != "" {
+		cfg.Admin.Dashboard.Enabled, err = strconv.ParseBool(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ADMIN_DASHBOARD_ENABLED: %q", raw)
+		}
+	}
+	if cfg.Admin.Dashboard.BasePath == "/" {
+		return nil, fmt.Errorf("ADMIN_BASE_PATH must not be /")
+	}
+	if cfg.Admin.Auth.Mode != "header" && cfg.Admin.Auth.Mode != "none" {
+		return nil, fmt.Errorf("ADMIN_AUTH_MODE must be header or none")
+	}
+	if cfg.Admin.Auth.UserHeader == "" {
+		cfg.Admin.Auth.UserHeader = "X-Forwarded-User"
+	}
+	if cfg.Admin.Auth.EmailHeader == "" {
+		cfg.Admin.Auth.EmailHeader = "X-Forwarded-Email"
+	}
+	if cfg.Admin.Auth.GroupsHeader == "" {
+		cfg.Admin.Auth.GroupsHeader = "X-Forwarded-Groups"
+	}
+
+	if raw := strings.TrimSpace(env["AUDIT_ENABLED"]); raw != "" {
+		cfg.Audit.Enabled, err = strconv.ParseBool(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid AUDIT_ENABLED: %q", raw)
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_RETENTION_DAYS"]); raw != "" {
+		cfg.Audit.RetentionDays, err = strconv.Atoi(raw)
+		if err != nil || cfg.Audit.RetentionDays < 0 {
+			return nil, fmt.Errorf("invalid AUDIT_RETENTION_DAYS: %q", raw)
+		}
+	}
+	if raw := strings.TrimSpace(env["RATE_LIMIT_ENABLED"]); raw != "" {
+		cfg.RateLimit.Enabled, err = strconv.ParseBool(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid RATE_LIMIT_ENABLED: %q", raw)
+		}
+	}
+	if raw := strings.TrimSpace(env["RATE_LIMIT_REQUESTS"]); raw != "" {
+		cfg.RateLimit.RequestsPerWindow, err = strconv.Atoi(raw)
+		if err != nil || cfg.RateLimit.RequestsPerWindow <= 0 {
+			return nil, fmt.Errorf("invalid RATE_LIMIT_REQUESTS: %q", raw)
+		}
+	}
+	if raw := strings.TrimSpace(env["RATE_LIMIT_WINDOW"]); raw != "" {
+		cfg.RateLimit.Window, err = time.ParseDuration(raw)
+		if err != nil || cfg.RateLimit.Window <= 0 {
+			return nil, fmt.Errorf("invalid RATE_LIMIT_WINDOW: %q", raw)
 		}
 	}
 
@@ -265,6 +390,25 @@ func parseAllowedOrigins(raw string) ([]string, error) {
 		origins = append(origins, normalized)
 	}
 	return origins, nil
+}
+
+func parseCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		values = append(values, value)
+	}
+	return values
 }
 
 func normalizeOrigin(raw string) (string, error) {

@@ -4,3 +4,5 @@
 README.md
 LICENSE
 *.log
+frontend/node_modules
+.data
