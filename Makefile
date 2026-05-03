@@ -1,4 +1,4 @@
-.PHONY: compose-e2e-mock compose-e2e-down e2e-kind-mock e2e-kind-keep e2e-kind-clean e2e-real-local
+.PHONY: compose-e2e-mock compose-e2e-down e2e-kind-mock e2e-kind-keep e2e-kind-clean e2e-real-local act-release-e2e
 
 compose-e2e-mock:
 	cp -n dev/.env.example dev/.env || true
@@ -24,3 +24,7 @@ e2e-kind-clean:
 e2e-real-local:
 	chmod +x scripts/e2e-real-local.sh
 	./scripts/e2e-real-local.sh
+
+act-release-e2e:
+	chmod +x scripts/act-release-e2e.sh
+	./scripts/act-release-e2e.sh
