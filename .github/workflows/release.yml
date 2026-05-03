@@ -121,6 +121,38 @@ jobs:
           provenance: mode=max
           sbom: true
 
+      - name: Set up Helm
+        if: steps.version.outputs.release_required == 'true'
+        uses: azure/setup-helm@v4
+
+      - name: Package Helm chart
+        if: steps.version.outputs.release_required == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p dist/charts
+          helm lint ./deploy/chart \
+            --set-string secrets.TURNSTILE_SECRET_KEY=dummy \
+            --set-string secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64=dummy
+          helm package ./deploy/chart \
+            --version "${{ steps.version.outputs.docker_tag }}" \
+            --app-version "${{ steps.version.outputs.docker_tag }}" \
+            --destination dist/charts
+
+      - name: Log in to GHCR for Helm
+        if: steps.version.outputs.release_required == 'true'
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Push Helm chart to GHCR OCI registry
+        if: steps.version.outputs.release_required == 'true'
+        run: |
+          set -euo pipefail
+          helm push "dist/charts/turnstile-appcheck-gateway-${{ steps.version.outputs.docker_tag }}.tgz" \
+            oci://ghcr.io/michibiki-io/charts
+
       - name: Generate release notes
         if: steps.version.outputs.release_required == 'true'
         env:

@@ -1,0 +1,21 @@
+apiVersion: v2
+name: turnstile-appcheck-gateway
+description: Helm chart for deploying the Turnstile and Firebase App Check gateway
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/michibiki-io/turnstile-appcheck-gateway
+sources:
+  - https://github.com/michibiki-io/turnstile-appcheck-gateway
+keywords:
+  - turnstile
+  - firebase
+  - app-check
+  - forwardauth
+  - traefik
+  - audit-log
+  - admin-dashboard
+  - kubernetes
+maintainers:
+  - name: michibiki-io
+    url: https://github.com/michibiki-io
