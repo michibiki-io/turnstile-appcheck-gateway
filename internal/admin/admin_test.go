@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit/storage/bunrepo"
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/config"
 )
 
@@ -119,7 +120,7 @@ func TestAuditResetRequiresConfirmation(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("reset status = %d body = %s", w.Code, w.Body.String())
 	}
-	page, err := store.List(context.Background(), audit.Filter{})
+	page, err := store.List(context.Background(), audit.Filter{IncludeTotal: true})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -151,12 +152,12 @@ func testConfig(t *testing.T) *config.Config {
 	}
 }
 
-func testStore(t *testing.T) *audit.Store {
+func testStore(t *testing.T) *audit.SyncRecorder {
 	t.Helper()
-	store, err := audit.Open(context.Background(), filepath.Join(t.TempDir(), "audit.db"))
+	store, err := bunrepo.Open(context.Background(), bunrepo.Config{StorageType: "sqlite", SQLitePath: filepath.Join(t.TempDir(), "audit.db")})
 	if err != nil {
 		t.Fatalf("audit.Open() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	return store
+	return audit.NewSyncRecorder(store, audit.NewPolicy(audit.PolicyConfig{}))
 }

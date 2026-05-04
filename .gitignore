@@ -35,3 +35,11 @@ go.work.sum
 # node_modules
 **/node_modules/**
 .tmp/
+
+# Generated admin dashboard assets. Docker/local release builds regenerate these
+# from frontend/ before compiling the Go binary.
+internal/adminui/dist/**
+!internal/adminui/dist/
+!internal/adminui/dist/.gitkeep
+!internal/adminui/dist/assets/
+!internal/adminui/dist/assets/.gitkeep

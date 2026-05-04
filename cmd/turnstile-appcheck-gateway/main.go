@@ -16,6 +16,7 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit/storage/bunrepo"
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/auth"
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/config"
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/e2e"
@@ -44,9 +45,18 @@ func run() error {
 	slog.SetDefault(logger)
 
 	var auditRecorder audit.Recorder = audit.NoopRecorder{}
-	var auditStore *audit.Store
+	var auditStore audit.CloseRepository
+	var stopAuditPrune context.CancelFunc
 	if cfg.Audit.Enabled {
-		auditStore, err = audit.Open(context.Background(), cfg.Audit.SQLitePath)
+		auditStore, err = bunrepo.Open(context.Background(), bunrepo.Config{
+			StorageType:     cfg.Audit.StorageType,
+			DSN:             cfg.Audit.DSN,
+			SQLitePath:      cfg.Audit.SQLitePath,
+			MaxOpenConns:    cfg.Audit.DBMaxOpenConns,
+			MaxIdleConns:    cfg.Audit.DBMaxIdleConns,
+			ConnMaxLifetime: cfg.Audit.DBConnMaxLifetime,
+			ConnMaxIdleTime: cfg.Audit.DBConnMaxIdleTime,
+		})
 		if err != nil {
 			return fmt.Errorf("open audit store: %w", err)
 		}
@@ -54,7 +64,35 @@ func run() error {
 		if err := auditStore.PruneRetention(context.Background(), cfg.Audit.RetentionDays); err != nil {
 			return fmt.Errorf("prune audit retention: %w", err)
 		}
-		auditRecorder = auditStore
+		policy := audit.NewPolicy(audit.PolicyConfig{
+			PublicMode:                audit.PublicMode(cfg.Audit.PublicMode),
+			VerifySuccessSampleRate:   cfg.Audit.VerifySuccessSample,
+			VerifyFailureSampleRate:   cfg.Audit.VerifyFailureSample,
+			ExchangeSuccessSampleRate: cfg.Audit.ExchangeSuccessSample,
+			ExchangeFailureSampleRate: cfg.Audit.ExchangeFailureSample,
+		})
+		if cfg.Audit.AsyncEnabled {
+			auditRecorder = audit.NewAsyncRecorder(auditStore, policy, audit.AsyncConfig{
+				ChannelSize:            cfg.Audit.ChannelSize,
+				BatchSize:              cfg.Audit.BatchSize,
+				FlushInterval:          cfg.Audit.FlushInterval,
+				ShutdownFlushTimeout:   cfg.Audit.ShutdownFlushTimeout,
+				DropOnFull:             cfg.Audit.DropOnFull,
+				EnqueueTimeout:         cfg.Audit.EnqueueTimeout,
+				CriticalEnqueueTimeout: cfg.Audit.CriticalEnqueueTimeout,
+				RetryMaxAttempts:       cfg.Audit.RetryMaxAttempts,
+				RetryInitialBackoff:    cfg.Audit.RetryInitialBackoff,
+				RetryMaxBackoff:        cfg.Audit.RetryMaxBackoff,
+				Logger:                 logger,
+			})
+		} else {
+			auditRecorder = audit.NewSyncRecorder(auditStore, policy)
+		}
+		if cfg.Audit.PruneInterval > 0 {
+			var pruneCtx context.Context
+			pruneCtx, stopAuditPrune = context.WithCancel(context.Background())
+			go runAuditPruner(pruneCtx, auditStore, logger, cfg.Audit.RetentionDays, cfg.Audit.PruneInterval)
+		}
 		_ = auditRecorder.Record(context.Background(), audit.Event{
 			Actor:       "system",
 			ActorSource: "system",
@@ -187,6 +225,14 @@ func run() error {
 	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("http shutdown failed: %w", err)
 	}
+	if stopAuditPrune != nil {
+		stopAuditPrune()
+	}
+	auditShutdownCtx, auditCancel := context.WithTimeout(context.Background(), cfg.Audit.ShutdownFlushTimeout)
+	defer auditCancel()
+	if err := auditRecorder.Close(auditShutdownCtx); err != nil {
+		return fmt.Errorf("audit recorder shutdown failed: %w", err)
+	}
 
 	logger.Info("server shutdown complete")
 	return nil
@@ -194,4 +240,19 @@ func run() error {
 
 func ptrInt64(v int64) *int64 {
 	return &v
+}
+
+func runAuditPruner(ctx context.Context, repo audit.Repository, logger *slog.Logger, retentionDays int, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if err := repo.PruneRetention(ctx, retentionDays); err != nil && logger != nil {
+				logger.Warn("failed to prune audit retention", "error", err.Error())
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }

@@ -8,7 +8,7 @@ This chart installs `turnstile-appcheck-gateway`, a Go/Gin gateway that bridges 
 - `GET /readyz`
 - `GET {SUBPATH}/admin/` and `GET {SUBPATH}/_admin/api/v1/...` when the admin dashboard is enabled
 
-The chart separates non-sensitive runtime configuration into a `ConfigMap` and sensitive values into a `Secret`. It also supports SQLite audit log persistence with a PVC and an ephemeral `emptyDir` mode.
+The chart separates non-sensitive runtime configuration into a `ConfigMap` and sensitive values into a `Secret`. It supports SQLite audit log persistence with a PVC, an ephemeral `emptyDir` mode, and external PostgreSQL or MariaDB/MySQL audit databases through `config.AUDIT_STORAGE_TYPE` and `config.AUDIT_DSN`.
 
 ## Prerequisites
 
@@ -175,7 +175,7 @@ Do not expose `ADMIN_AUTH_MODE=none` directly to the public internet.
 
 ## Audit Log Persistence with SQLite
 
-When `config.AUDIT_ENABLED=true`, the application stores audit events in SQLite at `config.AUDIT_SQLITE_PATH`. The chart mounts `/var/lib/turnstile-appcheck-gateway` as writable storage and defaults to PVC-backed persistence.
+When `config.AUDIT_ENABLED=true` and `config.AUDIT_STORAGE_TYPE=sqlite`, the application stores audit events in SQLite at `config.AUDIT_SQLITE_PATH`. The chart mounts `/var/lib/turnstile-appcheck-gateway` as writable storage and defaults to PVC-backed persistence.
 
 ```bash
 helm upgrade --install turnstile-appcheck-gateway ./deploy/chart \
@@ -193,9 +193,41 @@ helm upgrade --install turnstile-appcheck-gateway ./deploy/chart \
 
 For SQLite persistence, a single replica is recommended. The chart can render multiple replicas, but SQLite state and audit history are local to the mounted filesystem and are not a distributed datastore.
 
-`AUDIT_RETENTION_DAYS=0` disables retention cleanup.
+`AUDIT_RETENTION_DAYS=0` disables retention cleanup. `AUDIT_PRUNE_INTERVAL=0` disables periodic pruning.
+
+The current audit schema writes to `audit_events` and `audit_metric_rollups`. Existing SQLite audit rows from the earlier schema are intentionally not migrated; if an incompatible legacy `audit_events` table is found, it is dropped and recreated with the new schema.
 
 The audit log is designed not to store secret values, tokens, service account JSON, `Authorization` headers, cookies, or raw request bodies.
+
+## Production Audit Storage
+
+PostgreSQL is recommended for production and high-frequency `/verify` traffic:
+
+```bash
+helm upgrade --install turnstile-appcheck-gateway ./deploy/chart \
+  --namespace appcheck \
+  --create-namespace \
+  --set config.AUDIT_STORAGE_TYPE=postgres \
+  --set config.AUDIT_DSN='postgres://user:password@postgres:5432/turnstile_appcheck_gateway?sslmode=disable' \
+  --set config.AUDIT_DB_MAX_OPEN_CONNS=20 \
+  --set config.AUDIT_DB_MAX_IDLE_CONNS=10 \
+  --set config.AUDIT_DB_CONN_MAX_LIFETIME=30m \
+  --set config.AUDIT_DB_CONN_MAX_IDLE_TIME=5m
+```
+
+MariaDB/MySQL is also supported:
+
+```bash
+helm upgrade --install turnstile-appcheck-gateway ./deploy/chart \
+  --namespace appcheck \
+  --create-namespace \
+  --set config.AUDIT_STORAGE_TYPE=mariadb \
+  --set config.AUDIT_DSN='user:password@tcp(mariadb:3306)/turnstile_appcheck_gateway?parseTime=true&charset=utf8mb4&loc=UTC'
+```
+
+By default, `/verify` success audit rows are not stored one-by-one (`AUDIT_VERIFY_SUCCESS_SAMPLE_RATE=0.0`). They still update rollup metrics used by the admin dashboard. `/verify` failures, denials, missing/invalid token outcomes, and `rate_limit.denied` are persisted. `/exchange` final summaries are persisted by default, step events follow `AUDIT_PUBLIC_MODE`, and admin/audit events are always persisted.
+
+Async audit writes use a bounded channel and batch INSERTs. Best-effort events can be dropped when the channel is full and are logged/counted. Critical events wait only up to `AUDIT_CRITICAL_ENQUEUE_TIMEOUT`. Set Pod `terminationGracePeriodSeconds` longer than `AUDIT_SHUTDOWN_FLUSH_TIMEOUT` so shutdown can drain pending audit batches.
 
 ## Ephemeral Audit Log Example
 

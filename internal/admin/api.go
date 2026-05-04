@@ -72,39 +72,53 @@ func (h *Handler) auditEvents(c *gin.Context) {
 		return
 	}
 	filter := audit.Filter{
-		From:        queryTime(c, "from"),
-		To:          queryTime(c, "to"),
-		Actor:       c.Query("actor"),
-		Action:      c.Query("action"),
-		Endpoint:    c.Query("endpoint"),
-		Path:        c.Query("path"),
-		Method:      c.Query("method"),
-		Result:      c.Query("result"),
-		StatusCode:  queryInt(c, "status_code", 0),
-		StatusClass: c.Query("status_class"),
-		RequestID:   c.Query("request_id"),
-		Limit:       queryInt(c, "limit", 50),
-		Offset:      queryInt(c, "offset", 0),
+		From:         queryTime(c, "from"),
+		To:           queryTime(c, "to"),
+		Actor:        c.Query("actor"),
+		Action:       c.Query("action"),
+		Endpoint:     c.Query("endpoint"),
+		Path:         c.Query("path"),
+		Method:       c.Query("method"),
+		Result:       c.Query("result"),
+		StatusCode:   queryInt(c, "status_code", 0),
+		StatusClass:  c.Query("status_class"),
+		RequestID:    c.Query("request_id"),
+		Limit:        queryInt(c, "limit", 50),
+		Cursor:       c.Query("cursor"),
+		Offset:       queryInt(c, "offset", 0),
+		IncludeTotal: true,
+	}
+	legacyOffsetMode := strings.TrimSpace(c.Query("cursor")) == "" && strings.TrimSpace(c.Query("offset")) != ""
+	if strings.TrimSpace(filter.Cursor) != "" {
+		if _, err := audit.DecodeCursor(filter.Cursor); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid audit cursor"})
+			return
+		}
 	}
 	page, err := h.auditRead.List(c.Request.Context(), filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load audit events"})
 		return
 	}
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	nextOffset := filter.Offset + limit
-	var nextCursor *int
-	if nextOffset < page.Total {
-		nextCursor = &nextOffset
+	var nextCursor any
+	if legacyOffsetMode {
+		limit := filter.Limit
+		if limit <= 0 {
+			limit = 50
+		}
+		nextOffset := filter.Offset + limit
+		if nextOffset < page.Total {
+			nextCursor = nextOffset
+		}
+	} else if page.NextCursor != "" {
+		nextCursor = page.NextCursor
 	}
 	h.recordAdminAPI(c, "audit.view", "Admin viewed audit logs")
 	c.JSON(http.StatusOK, gin.H{
 		"items":      h.auditEventResponses(page.Items),
 		"total":      page.Total,
 		"nextCursor": nextCursor,
+		"hasNext":    page.HasNext,
 	})
 }
 
