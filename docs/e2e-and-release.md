@@ -12,11 +12,16 @@ Commands:
 
 ```bash
 make compose-e2e-mock
+make compose-e2e-mock-pg
+make compose-e2e-mock-mariadb
 make compose-e2e-down
 make e2e-kind-mock
 ```
 
 `compose-e2e-mock` uses the Compose override in `dev/docker-compose.e2e.yml`.
+PostgreSQL and MariaDB audit storage variants add `dev/docker-compose.pg.yml` or `dev/docker-compose.mariadb.yml` with Compose `-f`.
+
+For k6 audit storage load tests, see [Load Testing](load-testing.md).
 
 `e2e-kind-mock` uses a repository-local kubeconfig under `.tmp/` and never targets `~/.kube/config`.
 
@@ -160,11 +165,16 @@ Pull Request CI は mock mode を使います。real Cloudflare Turnstile / Fire
 
 ```bash
 make compose-e2e-mock
+make compose-e2e-mock-pg
+make compose-e2e-mock-mariadb
 make compose-e2e-down
 make e2e-kind-mock
 ```
 
 `compose-e2e-mock` は `dev/docker-compose.e2e.yml` を使います。
+PostgreSQL / MariaDB の audit storage variant は `dev/docker-compose.pg.yml` または `dev/docker-compose.mariadb.yml` を Compose `-f` で追加します。
+
+k6 による audit storage load test は [Load Testing](load-testing.md) を参照してください。
 
 `e2e-kind-mock` は `.tmp/` 配下の repo-local kubeconfig を使い、`~/.kube/config` は使いません。
 

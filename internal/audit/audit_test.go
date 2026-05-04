@@ -100,6 +100,88 @@ func TestPruneRetention(t *testing.T) {
 	}
 }
 
+func TestAppendBatchDuplicateIDIsIdempotent(t *testing.T) {
+	store, err := bunrepo.Open(context.Background(), bunrepo.Config{StorageType: "sqlite", SQLitePath: filepath.Join(t.TempDir(), "audit.db")})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	first := audit.Event{
+		ID:         "audit_duplicate_id",
+		Timestamp:  time.Date(2026, 5, 5, 1, 2, 3, 0, time.UTC),
+		Action:     "exchange.request",
+		Method:     "POST",
+		Endpoint:   "/api/v1/exchange",
+		StatusCode: 200,
+		Result:     audit.ResultSuccess,
+		RequestID:  "req-original",
+	}
+	changed := first
+	changed.Action = "verify.request"
+	changed.Endpoint = "/api/v1/verify"
+	changed.StatusCode = 401
+	changed.Result = audit.ResultFailure
+	changed.RequestID = "req-changed"
+
+	if err := store.AppendBatch(context.Background(), []audit.Event{first}); err != nil {
+		t.Fatalf("AppendBatch(first) error = %v", err)
+	}
+	if err := store.AppendBatch(context.Background(), []audit.Event{changed}); err != nil {
+		t.Fatalf("AppendBatch(duplicate) error = %v", err)
+	}
+	page, err := store.List(context.Background(), audit.Filter{IncludeTotal: true})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 {
+		t.Fatalf("duplicate id should not create a second row: %#v", page)
+	}
+	got := page.Items[0]
+	if got.Action != first.Action || got.Endpoint != first.Endpoint || got.StatusCode != first.StatusCode || got.RequestID != first.RequestID {
+		t.Fatalf("duplicate id should not overwrite original row: %#v", got)
+	}
+}
+
+func TestAppendAuditBatchPersistsEventsAndRollupsTogether(t *testing.T) {
+	store, err := bunrepo.Open(context.Background(), bunrepo.Config{StorageType: "sqlite", SQLitePath: filepath.Join(t.TempDir(), "audit.db")})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	now := time.Date(2026, 5, 5, 1, 2, 3, 0, time.UTC)
+	event := audit.Event{
+		ID:         "audit_atomic_batch",
+		Timestamp:  now,
+		Action:     "exchange.request",
+		Method:     "POST",
+		Endpoint:   "/api/v1/exchange",
+		StatusCode: 200,
+		Result:     audit.ResultSuccess,
+	}
+	if err := store.AppendAuditBatch(context.Background(), []audit.Event{event}, []audit.MetricRollup{audit.NewMetricRollup(event)}); err != nil {
+		t.Fatalf("AppendAuditBatch() error = %v", err)
+	}
+	if err := store.AppendAuditBatch(context.Background(), []audit.Event{event}, []audit.MetricRollup{audit.NewMetricRollup(event)}); err != nil {
+		t.Fatalf("AppendAuditBatch(duplicate retry) error = %v", err)
+	}
+	page, err := store.List(context.Background(), audit.Filter{IncludeTotal: true})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if page.Total != 1 {
+		t.Fatalf("duplicate retry should keep one event row: %#v", page)
+	}
+	metrics, err := store.Metrics(context.Background(), audit.MetricsFilter{From: now.Add(-time.Minute), To: now.Add(time.Minute), Bucket: time.Minute})
+	if err != nil {
+		t.Fatalf("Metrics() error = %v", err)
+	}
+	if metrics.Summary.Total != 2 || metrics.Summary.ExchangeSuccesses != 2 {
+		t.Fatalf("retry rollup count should be accumulated exactly once per successful batch call: %#v", metrics.Summary)
+	}
+}
+
 func pageID(t *testing.T, store *bunrepo.Repository) string {
 	t.Helper()
 	page, err := store.List(context.Background(), audit.Filter{Limit: 1})

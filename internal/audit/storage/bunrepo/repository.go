@@ -19,20 +19,12 @@ func (r *Repository) AppendBatch(ctx context.Context, events []audit.Event) erro
 	if r == nil || r.db == nil || len(events) == 0 {
 		return nil
 	}
-	models := make([]auditEventModel, 0, len(events))
-	for _, event := range events {
-		if err := audit.PrepareEvent(&event); err != nil {
-			return err
-		}
-		model, err := toEventModel(event)
-		if err != nil {
-			return err
-		}
-		models = append(models, model)
+	models, err := prepareEventModels(events)
+	if err != nil {
+		return err
 	}
 	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		_, err := tx.NewInsert().Model(&models).Exec(ctx)
-		return err
+		return r.insertEventModels(ctx, tx, models)
 	})
 }
 
@@ -40,6 +32,48 @@ func (r *Repository) AppendMetricRollups(ctx context.Context, rollups []audit.Me
 	if r == nil || r.db == nil || len(rollups) == 0 {
 		return nil
 	}
+	models := prepareRollupModels(rollups)
+	if len(models) == 0 {
+		return nil
+	}
+	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		return r.upsertRollupModels(ctx, tx, models)
+	})
+}
+
+func (r *Repository) AppendAuditBatch(ctx context.Context, events []audit.Event, rollups []audit.MetricRollup) error {
+	if r == nil || r.db == nil || (len(events) == 0 && len(rollups) == 0) {
+		return nil
+	}
+	eventModels, err := prepareEventModels(events)
+	if err != nil {
+		return err
+	}
+	rollupModels := prepareRollupModels(rollups)
+	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := r.insertEventModels(ctx, tx, eventModels); err != nil {
+			return err
+		}
+		return r.upsertRollupModels(ctx, tx, rollupModels)
+	})
+}
+
+func prepareEventModels(events []audit.Event) ([]auditEventModel, error) {
+	models := make([]auditEventModel, 0, len(events))
+	for _, event := range events {
+		if err := audit.PrepareEvent(&event); err != nil {
+			return nil, err
+		}
+		model, err := toEventModel(event)
+		if err != nil {
+			return nil, err
+		}
+		models = append(models, model)
+	}
+	return models, nil
+}
+
+func prepareRollupModels(rollups []audit.MetricRollup) []metricRollupModel {
 	merged := mergeRollups(rollups)
 	models := make([]metricRollupModel, 0, len(merged))
 	for _, rollup := range merged {
@@ -48,24 +82,43 @@ func (r *Repository) AppendMetricRollups(ctx context.Context, rollups []audit.Me
 		}
 		models = append(models, toRollupModel(rollup))
 	}
+	return models
+}
+
+func (r *Repository) insertEventModels(ctx context.Context, tx bun.Tx, models []auditEventModel) error {
 	if len(models) == 0 {
 		return nil
 	}
-	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		query := tx.NewInsert().Model(&models)
-		switch r.helper.name {
-		case dialectMySQL:
-			query = query.On("DUPLICATE KEY UPDATE count = count + VALUES(count)")
-		case dialectSQLite:
-			query = query.On("CONFLICT (bucket_start, bucket_size, endpoint, method, action, result, status_class, status_code) DO UPDATE").
-				Set("count = count + excluded.count")
-		default:
-			query = query.On("CONFLICT (bucket_start, bucket_size, endpoint, method, action, result, status_class, status_code) DO UPDATE").
-				Set("count = audit_metric_rollups.count + EXCLUDED.count")
-		}
-		_, err := query.Exec(ctx)
-		return err
-	})
+	query := tx.NewInsert().Model(&models)
+	// Duplicate IDs are replayed flush attempts. Keep the original audit row
+	// unchanged instead of turning a retry into a permanent writer failure.
+	switch r.helper.name {
+	case dialectMySQL:
+		query = query.On("DUPLICATE KEY UPDATE id = id")
+	default:
+		query = query.On("CONFLICT (id) DO NOTHING")
+	}
+	_, err := query.Exec(ctx)
+	return err
+}
+
+func (r *Repository) upsertRollupModels(ctx context.Context, tx bun.Tx, models []metricRollupModel) error {
+	if len(models) == 0 {
+		return nil
+	}
+	query := tx.NewInsert().Model(&models)
+	switch r.helper.name {
+	case dialectMySQL:
+		query = query.On("DUPLICATE KEY UPDATE count = count + VALUES(count)")
+	case dialectSQLite:
+		query = query.On("CONFLICT (bucket_start, bucket_size, endpoint, method, action, result, status_class, status_code) DO UPDATE").
+			Set("count = count + excluded.count")
+	default:
+		query = query.On("CONFLICT (bucket_start, bucket_size, endpoint, method, action, result, status_class, status_code) DO UPDATE").
+			Set("count = metric_rollup_model.count + EXCLUDED.count")
+	}
+	_, err := query.Exec(ctx)
+	return err
 }
 
 func (r *Repository) Get(ctx context.Context, id string) (audit.Event, bool, error) {

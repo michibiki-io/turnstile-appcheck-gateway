@@ -40,12 +40,17 @@ func (r *SyncRecorder) Record(ctx context.Context, event Event) error {
 		return err
 	}
 	decision := r.policy.Decide(event)
+	var rollup *MetricRollup
 	if decision.CountMetric {
-		if err := r.repo.AppendMetricRollups(ctx, []MetricRollup{NewMetricRollup(event)}); err != nil {
-			return err
-		}
+		value := NewMetricRollup(event)
+		rollup = &value
 	}
 	if !decision.Persist {
+		if rollup != nil {
+			if err := r.repo.AppendMetricRollups(ctx, []MetricRollup{*rollup}); err != nil {
+				return err
+			}
+		}
 		r.stats.PolicySkippedTotal.Add(1)
 		if decision.SampledOut {
 			r.stats.SampledOutTotal.Add(1)
@@ -53,6 +58,14 @@ func (r *SyncRecorder) Record(ctx context.Context, event Event) error {
 		return nil
 	}
 	r.stats.EnqueueTotal.Add(1)
+	if rollup != nil {
+		if repo, ok := r.repo.(AtomicBatchRepository); ok {
+			return repo.AppendAuditBatch(ctx, []Event{event}, []MetricRollup{*rollup})
+		}
+		if err := r.repo.AppendMetricRollups(ctx, []MetricRollup{*rollup}); err != nil {
+			return err
+		}
+	}
 	return r.repo.AppendBatch(ctx, []Event{event})
 }
 
@@ -468,6 +481,24 @@ func (r *AsyncRecorder) flushWithRetry(ctx context.Context, events []Event, roll
 }
 
 func (r *AsyncRecorder) flushOnce(ctx context.Context, events []Event, rollups []MetricRollup) error {
+	if repo, ok := r.repo.(AtomicBatchRepository); ok {
+		if err := repo.AppendAuditBatch(ctx, events, rollups); err != nil {
+			if len(events) > 0 {
+				r.stats.FlushErrorTotal.Add(1)
+			}
+			if len(rollups) > 0 {
+				r.stats.RollupFlushError.Add(1)
+			}
+			return fmt.Errorf("append audit batch: %w", err)
+		}
+		if len(events) > 0 {
+			r.stats.FlushTotal.Add(1)
+		}
+		if len(rollups) > 0 {
+			r.stats.RollupFlushTotal.Add(1)
+		}
+		return nil
+	}
 	if len(events) > 0 {
 		if err := r.repo.AppendBatch(ctx, events); err != nil {
 			r.stats.FlushErrorTotal.Add(1)

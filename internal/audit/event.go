@@ -146,6 +146,10 @@ type Repository interface {
 	PruneRetention(context.Context, int) error
 }
 
+type AtomicBatchRepository interface {
+	AppendAuditBatch(context.Context, []Event, []MetricRollup) error
+}
+
 type CloseRepository interface {
 	Repository
 	Close() error

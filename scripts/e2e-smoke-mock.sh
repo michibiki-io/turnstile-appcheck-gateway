@@ -83,6 +83,54 @@ for banned in (
 PY
 }
 
+assert_request_metrics_nonzero() {
+  local file="$1"
+  python3 - "$file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    data = json.load(fh)
+summary = data.get("summary") or {}
+total = int(summary.get("total") or 0)
+exchange_successes = int(summary.get("exchangeSuccesses") or 0)
+points = data.get("points") or []
+point_total = sum(int(point.get("count") or 0) for point in points)
+if total < 1 or exchange_successes < 1 or point_total < 1:
+    raise SystemExit(f"request metrics did not include exchange rollups: summary={summary} pointTotal={point_total}")
+PY
+}
+
+assert_audit_events_nonzero() {
+  local file="$1"
+  python3 - "$file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    data = json.load(fh)
+total = int(data.get("total") or 0)
+items = data.get("items") or []
+if total < 1 or not items:
+    raise SystemExit(f"audit events did not include persisted rows: total={total} items={len(items)}")
+PY
+}
+
+wait_for_request_metrics() {
+  local outfile="${TMP_DIR}/admin-metrics.out"
+  local attempt
+  for attempt in $(seq 1 30); do
+    run_curl "${outfile}" GET "${BASE_URL}/appcheck/_admin/api/v1/request-metrics" "${ADMIN_HEADERS[@]}"
+    if [[ "${HTTP_STATUS}" == "200" ]] && assert_request_metrics_nonzero "${outfile}" >/dev/null 2>&1; then
+      echo "admin metrics rollups: OK"
+      return 0
+    fi
+    sleep 1
+  done
+  assert_status "200" "${HTTP_STATUS}" "admin metrics"
+  assert_request_metrics_nonzero "${outfile}"
+}
+
 ADMIN_HEADERS=(
   -H "X-Forwarded-User: e2e-admin"
   -H "X-Forwarded-Email: e2e-admin@example.com"
@@ -149,11 +197,10 @@ run_curl "${TMP_DIR}/admin-page.out" GET "${BASE_URL}/appcheck/admin/" "${ADMIN_
 assert_status "200" "${HTTP_STATUS}" "admin dashboard"
 echo "admin dashboard: HTTP 200"
 
-run_curl "${TMP_DIR}/admin-metrics.out" GET "${BASE_URL}/appcheck/_admin/api/v1/request-metrics" "${ADMIN_HEADERS[@]}"
-assert_status "200" "${HTTP_STATUS}" "admin metrics"
-echo "admin metrics: HTTP 200"
+wait_for_request_metrics
 
 run_curl "${TMP_DIR}/admin-audit.out" GET "${BASE_URL}/appcheck/_admin/api/v1/audit-events?limit=20" "${ADMIN_HEADERS[@]}"
 assert_status "200" "${HTTP_STATUS}" "admin audit"
+assert_audit_events_nonzero "${TMP_DIR}/admin-audit.out"
 assert_audit_sanitized "${TMP_DIR}/admin-audit.out"
 echo "admin audit sanitization: OK"
