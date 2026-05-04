@@ -12,12 +12,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit/storage/bunrepo"
 	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/config"
 )
 
 func TestRateLimiterDeniesAndAudits(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	store, err := audit.Open(context.Background(), filepath.Join(t.TempDir(), "audit.db"))
+	store, err := bunrepo.Open(context.Background(), bunrepo.Config{StorageType: "sqlite", SQLitePath: filepath.Join(t.TempDir(), "audit.db")})
 	if err != nil {
 		t.Fatalf("audit.Open() error = %v", err)
 	}
@@ -28,7 +29,7 @@ func TestRateLimiterDeniesAndAudits(t *testing.T) {
 		Enabled:           true,
 		RequestsPerWindow: 1,
 		Window:            time.Minute,
-	}, slog.Default(), store), func(c *gin.Context) {
+	}, slog.Default(), audit.NewSyncRecorder(store, audit.NewPolicy(audit.PolicyConfig{}))), func(c *gin.Context) {
 		c.Status(http.StatusNoContent)
 	})
 
@@ -46,7 +47,7 @@ func TestRateLimiterDeniesAndAudits(t *testing.T) {
 		t.Fatalf("second status = %d body = %s", w.Code, w.Body.String())
 	}
 
-	page, err := store.List(context.Background(), audit.Filter{Action: "rate_limit.denied"})
+	page, err := store.List(context.Background(), audit.Filter{Action: "rate_limit.denied", IncludeTotal: true})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}

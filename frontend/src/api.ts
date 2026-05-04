@@ -60,7 +60,8 @@ export type AuditEvent = {
 export type AuditPage = {
   items: AuditEvent[];
   total: number;
-  nextCursor: number | null;
+  nextCursor: string | null;
+  hasNext: boolean;
 };
 
 export type AuditOptions = {
@@ -173,7 +174,7 @@ export function rangeMillis(range: string): number {
   return 24 * 60 * 60 * 1000;
 }
 
-export function auditParams(filters: AuditFilters, limit: number, offset: number): URLSearchParams {
+export function auditParams(filters: AuditFilters, limit: number, cursor: string): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.from) {
     params.set('from', new Date(filters.from).toISOString());
@@ -187,7 +188,7 @@ export function auditParams(filters: AuditFilters, limit: number, offset: number
     params.set('to', rangeParams.get('to') ?? '');
   }
   params.set('limit', String(limit));
-  params.set('offset', String(offset));
+  if (cursor) params.set('cursor', cursor);
   const entries: Array<[string, string]> = [
     ['actor', filters.actor],
     ['action', filters.action],

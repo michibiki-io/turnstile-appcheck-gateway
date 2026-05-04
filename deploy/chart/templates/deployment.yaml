@@ -31,6 +31,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       serviceAccountName: {{ include "turnstile-appcheck-gateway.serviceAccountName" . }}
       automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
       {{- with .Values.imagePullSecrets }}

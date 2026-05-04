@@ -31,6 +31,8 @@ const (
 	defaultTimestampTimezone  = "Asia/Tokyo"
 	defaultAuditSQLitePath    = "/var/lib/turnstile-appcheck-gateway/audit.db"
 	defaultAuditRetentionDays = 90
+	defaultAuditChannelSize   = 50000
+	defaultAuditBatchSize     = 1000
 	defaultRateLimitRequests  = 120
 	defaultRateLimitWindow    = time.Minute
 	defaultE2ETurnstilePass   = "e2e-turnstile-pass"
@@ -103,10 +105,32 @@ type AdminAuthConfig struct {
 }
 
 type AuditConfig struct {
-	Enabled       bool
-	StorageType   string
-	SQLitePath    string
-	RetentionDays int
+	Enabled                bool
+	StorageType            string
+	DSN                    string
+	SQLitePath             string
+	DBMaxOpenConns         int
+	DBMaxIdleConns         int
+	DBConnMaxLifetime      time.Duration
+	DBConnMaxIdleTime      time.Duration
+	AsyncEnabled           bool
+	ChannelSize            int
+	BatchSize              int
+	FlushInterval          time.Duration
+	ShutdownFlushTimeout   time.Duration
+	DropOnFull             bool
+	EnqueueTimeout         time.Duration
+	CriticalEnqueueTimeout time.Duration
+	RetryMaxAttempts       int
+	RetryInitialBackoff    time.Duration
+	RetryMaxBackoff        time.Duration
+	PublicMode             string
+	VerifySuccessSample    float64
+	VerifyFailureSample    float64
+	ExchangeSuccessSample  float64
+	ExchangeFailureSample  float64
+	RetentionDays          int
+	PruneInterval          time.Duration
 }
 
 type RateLimitConfig struct {
@@ -165,10 +189,28 @@ func loadFromMap(env map[string]string) (*Config, error) {
 			},
 		},
 		Audit: AuditConfig{
-			Enabled:       true,
-			StorageType:   "sqlite",
-			SQLitePath:    strings.TrimSpace(getOrDefault(env, "AUDIT_SQLITE_PATH", defaultAuditSQLitePath)),
-			RetentionDays: defaultAuditRetentionDays,
+			Enabled:                true,
+			StorageType:            strings.ToLower(strings.TrimSpace(getOrDefault(env, "AUDIT_STORAGE_TYPE", "sqlite"))),
+			DSN:                    strings.TrimSpace(env["AUDIT_DSN"]),
+			SQLitePath:             strings.TrimSpace(getOrDefault(env, "AUDIT_SQLITE_PATH", defaultAuditSQLitePath)),
+			AsyncEnabled:           true,
+			ChannelSize:            defaultAuditChannelSize,
+			BatchSize:              defaultAuditBatchSize,
+			FlushInterval:          100 * time.Millisecond,
+			ShutdownFlushTimeout:   5 * time.Second,
+			DropOnFull:             true,
+			EnqueueTimeout:         5 * time.Millisecond,
+			CriticalEnqueueTimeout: 50 * time.Millisecond,
+			RetryMaxAttempts:       3,
+			RetryInitialBackoff:    100 * time.Millisecond,
+			RetryMaxBackoff:        2 * time.Second,
+			PublicMode:             "failure_step",
+			VerifySuccessSample:    0,
+			VerifyFailureSample:    1,
+			ExchangeSuccessSample:  1,
+			ExchangeFailureSample:  1,
+			RetentionDays:          defaultAuditRetentionDays,
+			PruneInterval:          24 * time.Hour,
 		},
 		RateLimit: RateLimitConfig{
 			Enabled:           true,
@@ -281,10 +323,153 @@ func loadFromMap(env map[string]string) (*Config, error) {
 			return nil, fmt.Errorf("invalid AUDIT_ENABLED: %q", raw)
 		}
 	}
+	if raw := strings.TrimSpace(env["AUDIT_STORAGE_TYPE"]); raw != "" {
+		cfg.Audit.StorageType = strings.ToLower(raw)
+	}
+	switch cfg.Audit.StorageType {
+	case "", "sqlite", "postgres", "postgresql", "mariadb", "mysql":
+		if cfg.Audit.StorageType == "" {
+			cfg.Audit.StorageType = "sqlite"
+		}
+	default:
+		return nil, fmt.Errorf("AUDIT_STORAGE_TYPE must be sqlite, postgres, postgresql, mariadb, or mysql")
+	}
+	cfg.Audit.DSN = strings.TrimSpace(env["AUDIT_DSN"])
+	if raw := strings.TrimSpace(env["AUDIT_SQLITE_PATH"]); raw != "" {
+		cfg.Audit.SQLitePath = raw
+	}
+	if raw := strings.TrimSpace(env["AUDIT_DB_MAX_OPEN_CONNS"]); raw != "" {
+		cfg.Audit.DBMaxOpenConns, err = parseNonNegativeInt("AUDIT_DB_MAX_OPEN_CONNS", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_DB_MAX_IDLE_CONNS"]); raw != "" {
+		cfg.Audit.DBMaxIdleConns, err = parseNonNegativeInt("AUDIT_DB_MAX_IDLE_CONNS", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_DB_CONN_MAX_LIFETIME"]); raw != "" {
+		cfg.Audit.DBConnMaxLifetime, err = parseNonNegativeDuration("AUDIT_DB_CONN_MAX_LIFETIME", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_DB_CONN_MAX_IDLE_TIME"]); raw != "" {
+		cfg.Audit.DBConnMaxIdleTime, err = parseNonNegativeDuration("AUDIT_DB_CONN_MAX_IDLE_TIME", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_ASYNC_ENABLED"]); raw != "" {
+		cfg.Audit.AsyncEnabled, err = strconv.ParseBool(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid AUDIT_ASYNC_ENABLED: %q", raw)
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_CHANNEL_SIZE"]); raw != "" {
+		cfg.Audit.ChannelSize, err = parsePositiveInt("AUDIT_CHANNEL_SIZE", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_BATCH_SIZE"]); raw != "" {
+		cfg.Audit.BatchSize, err = parsePositiveInt("AUDIT_BATCH_SIZE", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_FLUSH_INTERVAL"]); raw != "" {
+		cfg.Audit.FlushInterval, err = parsePositiveDuration("AUDIT_FLUSH_INTERVAL", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_SHUTDOWN_FLUSH_TIMEOUT"]); raw != "" {
+		cfg.Audit.ShutdownFlushTimeout, err = parsePositiveDuration("AUDIT_SHUTDOWN_FLUSH_TIMEOUT", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_DROP_ON_FULL"]); raw != "" {
+		cfg.Audit.DropOnFull, err = strconv.ParseBool(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid AUDIT_DROP_ON_FULL: %q", raw)
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_ENQUEUE_TIMEOUT"]); raw != "" {
+		cfg.Audit.EnqueueTimeout, err = parsePositiveDuration("AUDIT_ENQUEUE_TIMEOUT", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_CRITICAL_ENQUEUE_TIMEOUT"]); raw != "" {
+		cfg.Audit.CriticalEnqueueTimeout, err = parsePositiveDuration("AUDIT_CRITICAL_ENQUEUE_TIMEOUT", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_RETRY_MAX_ATTEMPTS"]); raw != "" {
+		cfg.Audit.RetryMaxAttempts, err = parsePositiveInt("AUDIT_RETRY_MAX_ATTEMPTS", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_RETRY_INITIAL_BACKOFF"]); raw != "" {
+		cfg.Audit.RetryInitialBackoff, err = parsePositiveDuration("AUDIT_RETRY_INITIAL_BACKOFF", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_RETRY_MAX_BACKOFF"]); raw != "" {
+		cfg.Audit.RetryMaxBackoff, err = parsePositiveDuration("AUDIT_RETRY_MAX_BACKOFF", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_PUBLIC_MODE"]); raw != "" {
+		cfg.Audit.PublicMode = strings.ToLower(raw)
+	}
+	switch cfg.Audit.PublicMode {
+	case "summary", "step", "failure_step":
+	default:
+		return nil, fmt.Errorf("AUDIT_PUBLIC_MODE must be summary, step, or failure_step")
+	}
+	if raw := strings.TrimSpace(env["AUDIT_VERIFY_SUCCESS_SAMPLE_RATE"]); raw != "" {
+		cfg.Audit.VerifySuccessSample, err = parseSampleRate("AUDIT_VERIFY_SUCCESS_SAMPLE_RATE", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_VERIFY_FAILURE_SAMPLE_RATE"]); raw != "" {
+		cfg.Audit.VerifyFailureSample, err = parseSampleRate("AUDIT_VERIFY_FAILURE_SAMPLE_RATE", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_EXCHANGE_SUCCESS_SAMPLE_RATE"]); raw != "" {
+		cfg.Audit.ExchangeSuccessSample, err = parseSampleRate("AUDIT_EXCHANGE_SUCCESS_SAMPLE_RATE", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_EXCHANGE_FAILURE_SAMPLE_RATE"]); raw != "" {
+		cfg.Audit.ExchangeFailureSample, err = parseSampleRate("AUDIT_EXCHANGE_FAILURE_SAMPLE_RATE", raw)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if raw := strings.TrimSpace(env["AUDIT_RETENTION_DAYS"]); raw != "" {
 		cfg.Audit.RetentionDays, err = strconv.Atoi(raw)
 		if err != nil || cfg.Audit.RetentionDays < 0 {
 			return nil, fmt.Errorf("invalid AUDIT_RETENTION_DAYS: %q", raw)
+		}
+	}
+	if raw := strings.TrimSpace(env["AUDIT_PRUNE_INTERVAL"]); raw != "" {
+		cfg.Audit.PruneInterval, err = parseNonNegativeDuration("AUDIT_PRUNE_INTERVAL", raw)
+		if err != nil {
+			return nil, err
 		}
 	}
 	if raw := strings.TrimSpace(env["RATE_LIMIT_ENABLED"]); raw != "" {
@@ -459,6 +644,46 @@ func parseCSV(raw string) []string {
 		values = append(values, value)
 	}
 	return values
+}
+
+func parsePositiveInt(name, raw string) (int, error) {
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("invalid %s: %q", name, raw)
+	}
+	return value, nil
+}
+
+func parseNonNegativeInt(name, raw string) (int, error) {
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("invalid %s: %q", name, raw)
+	}
+	return value, nil
+}
+
+func parsePositiveDuration(name, raw string) (time.Duration, error) {
+	value, err := time.ParseDuration(raw)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("invalid %s: %q", name, raw)
+	}
+	return value, nil
+}
+
+func parseNonNegativeDuration(name, raw string) (time.Duration, error) {
+	value, err := time.ParseDuration(raw)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("invalid %s: %q", name, raw)
+	}
+	return value, nil
+}
+
+func parseSampleRate(name, raw string) (float64, error) {
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil || value < 0 || value > 1 {
+		return 0, fmt.Errorf("invalid %s: %q", name, raw)
+	}
+	return value, nil
 }
 
 func normalizeOrigin(raw string) (string, error) {

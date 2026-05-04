@@ -169,9 +169,32 @@ Configuration is read from environment variables. Use [.env.example](.env.exampl
 | `ADMIN_AUTH_GROUPS_HEADER` | optional | `X-Forwarded-Groups` | trusted upstream groups header |
 | `ADMIN_ALLOWED_USERS` | optional | - | comma-separated allowed admin users |
 | `ADMIN_ALLOWED_GROUPS` | optional | `gateway-admins` | comma-separated allowed admin groups |
-| `AUDIT_ENABLED` | optional | `true` | enable SQLite audit logging |
-| `AUDIT_SQLITE_PATH` | optional | `/var/lib/turnstile-appcheck-gateway/audit.db` | SQLite audit database path |
+| `AUDIT_ENABLED` | optional | `true` | enable audit logging |
+| `AUDIT_STORAGE_TYPE` | optional | `sqlite` | `sqlite`, `postgres`, `postgresql`, `mariadb`, or `mysql` |
+| `AUDIT_DSN` | optional | - | PostgreSQL/MariaDB/MySQL DSN, or SQLite DSN override |
+| `AUDIT_SQLITE_PATH` | optional | `/var/lib/turnstile-appcheck-gateway/audit.db` | SQLite audit database path when `AUDIT_DSN` is empty |
+| `AUDIT_DB_MAX_OPEN_CONNS` | optional | - | SQL pool max open connections for PostgreSQL/MariaDB/MySQL |
+| `AUDIT_DB_MAX_IDLE_CONNS` | optional | - | SQL pool max idle connections for PostgreSQL/MariaDB/MySQL |
+| `AUDIT_DB_CONN_MAX_LIFETIME` | optional | - | SQL pool connection max lifetime |
+| `AUDIT_DB_CONN_MAX_IDLE_TIME` | optional | - | SQL pool connection max idle time |
+| `AUDIT_ASYNC_ENABLED` | optional | `true` | use async bounded-channel audit writes |
+| `AUDIT_CHANNEL_SIZE` | optional | `50000` | async audit queue size |
+| `AUDIT_BATCH_SIZE` | optional | `1000` | max events/rollups per flush |
+| `AUDIT_FLUSH_INTERVAL` | optional | `100ms` | async flush interval |
+| `AUDIT_SHUTDOWN_FLUSH_TIMEOUT` | optional | `5s` | graceful shutdown audit drain timeout |
+| `AUDIT_DROP_ON_FULL` | optional | `true` | drop best-effort events when the queue is full |
+| `AUDIT_ENQUEUE_TIMEOUT` | optional | `5ms` | enqueue timeout for normal/best-effort events |
+| `AUDIT_CRITICAL_ENQUEUE_TIMEOUT` | optional | `50ms` | enqueue timeout for critical events |
+| `AUDIT_RETRY_MAX_ATTEMPTS` | optional | `3` | failed batch write retry attempts |
+| `AUDIT_RETRY_INITIAL_BACKOFF` | optional | `100ms` | initial retry backoff |
+| `AUDIT_RETRY_MAX_BACKOFF` | optional | `2s` | max retry backoff |
+| `AUDIT_PUBLIC_MODE` | optional | `failure_step` | `summary`, `step`, or `failure_step` for public gateway step events |
+| `AUDIT_VERIFY_SUCCESS_SAMPLE_RATE` | optional | `0.0` | `/verify` success audit row sample rate |
+| `AUDIT_VERIFY_FAILURE_SAMPLE_RATE` | optional | `1.0` | `/verify` failure audit row sample rate |
+| `AUDIT_EXCHANGE_SUCCESS_SAMPLE_RATE` | optional | `1.0` | `/exchange` success audit row sample rate |
+| `AUDIT_EXCHANGE_FAILURE_SAMPLE_RATE` | optional | `1.0` | `/exchange` failure audit row sample rate |
 | `AUDIT_RETENTION_DAYS` | optional | `90` | retention cleanup days; `0` disables cleanup |
+| `AUDIT_PRUNE_INTERVAL` | optional | `24h` | periodic retention pruning interval; `0` disables periodic pruning |
 | `RATE_LIMIT_ENABLED` | optional | `true` | in-memory rate limit for `/exchange` and `/verify` |
 | `RATE_LIMIT_REQUESTS` | optional | `120` | requests per rate limit window |
 | `RATE_LIMIT_WINDOW` | optional | `1m` | rate limit window |
@@ -196,7 +219,11 @@ The Dashboard page shows gateway request result, exchange request result, verify
 
 The Audit Log page provides server-side filters for actor, action, endpoint, result, from, to, page size, method, request ID, and path. It also provides pagination, a detail modal, and a guarded reset dialog. `POST /_admin/api/v1/audit-events/reset` requires `{"confirmation":"RESET"}`; existing audit events are deleted and a new `audit.reset` marker remains visible.
 
-Audit events are stored in SQLite when `AUDIT_ENABLED=true`. Persist `/var/lib/turnstile-appcheck-gateway` in containers or Kubernetes when audit history must survive restarts. `AUDIT_RETENTION_DAYS` deletes older events at startup when the value is greater than zero.
+Audit events use a Bun-backed repository. SQLite remains supported for local and lightweight deployments, PostgreSQL is recommended for production/high-frequency gateway use, and MariaDB/MySQL is supported for operational compatibility. Existing SQLite audit rows from the earlier schema are intentionally not migrated; if an incompatible legacy `audit_events` table is found, it is dropped and recreated with the new schema.
+
+Public gateway audit logging is gateway-aware. `/exchange` final `exchange.request` summary events are persisted by default. Turnstile/Firebase step events follow `AUDIT_PUBLIC_MODE`: `summary` stores only final summaries, `step` stores summaries and steps, and `failure_step` stores successful summaries plus failed/denied/rate-limit step events. `/verify` success rows are sampled at `AUDIT_VERIFY_SUCCESS_SAMPLE_RATE=0.0` by default, while failures, denials, missing/invalid token outcomes, and `rate_limit.denied` are persisted. Admin and audit events are always persisted.
+
+Dashboard request metrics are backed by asynchronous rollup counters, so sampled-out `/verify` successes still contribute to request totals and trends. Async writes use a bounded channel and batch INSERTs. Best-effort events are dropped and logged/counted when the queue is full; critical events wait only up to `AUDIT_CRITICAL_ENQUEUE_TIMEOUT`. Shutdown drains the queue with `AUDIT_SHUTDOWN_FLUSH_TIMEOUT`; Kubernetes `terminationGracePeriodSeconds` should be longer than that timeout.
 
 Authentication modes:
 
@@ -314,6 +341,8 @@ npm install
 npm run check
 npm run build
 ```
+
+Generated files under `internal/adminui/dist/` are build artifacts and are not tracked by git. The directory keeps only placeholder files so Go's embed patterns remain valid before the frontend has been built.
 
 For contributor-focused test, CI, and release notes, see [docs/e2e-and-release.md](docs/e2e-and-release.md).
 
@@ -483,9 +512,32 @@ docs/images
 | `ADMIN_AUTH_GROUPS_HEADER` | 任意 | `X-Forwarded-Groups` | trusted upstream groups header |
 | `ADMIN_ALLOWED_USERS` | 任意 | - | 管理者 user のカンマ区切り一覧 |
 | `ADMIN_ALLOWED_GROUPS` | 任意 | `gateway-admins` | 管理者 group のカンマ区切り一覧 |
-| `AUDIT_ENABLED` | 任意 | `true` | SQLite audit logging を有効化 |
-| `AUDIT_SQLITE_PATH` | 任意 | `/var/lib/turnstile-appcheck-gateway/audit.db` | SQLite audit database path |
+| `AUDIT_ENABLED` | 任意 | `true` | audit logging を有効化 |
+| `AUDIT_STORAGE_TYPE` | 任意 | `sqlite` | `sqlite`、`postgres`、`postgresql`、`mariadb`、`mysql` |
+| `AUDIT_DSN` | 任意 | - | PostgreSQL/MariaDB/MySQL DSN、または SQLite DSN override |
+| `AUDIT_SQLITE_PATH` | 任意 | `/var/lib/turnstile-appcheck-gateway/audit.db` | `AUDIT_DSN` が空のときの SQLite audit database path |
+| `AUDIT_DB_MAX_OPEN_CONNS` | 任意 | - | PostgreSQL/MariaDB/MySQL の SQL pool max open connections |
+| `AUDIT_DB_MAX_IDLE_CONNS` | 任意 | - | PostgreSQL/MariaDB/MySQL の SQL pool max idle connections |
+| `AUDIT_DB_CONN_MAX_LIFETIME` | 任意 | - | SQL pool connection max lifetime |
+| `AUDIT_DB_CONN_MAX_IDLE_TIME` | 任意 | - | SQL pool connection max idle time |
+| `AUDIT_ASYNC_ENABLED` | 任意 | `true` | bounded channel による async audit write |
+| `AUDIT_CHANNEL_SIZE` | 任意 | `50000` | async audit queue size |
+| `AUDIT_BATCH_SIZE` | 任意 | `1000` | flush あたりの最大 event/rollup 数 |
+| `AUDIT_FLUSH_INTERVAL` | 任意 | `100ms` | async flush interval |
+| `AUDIT_SHUTDOWN_FLUSH_TIMEOUT` | 任意 | `5s` | shutdown 時の audit drain timeout |
+| `AUDIT_DROP_ON_FULL` | 任意 | `true` | queue full 時に best-effort event を drop |
+| `AUDIT_ENQUEUE_TIMEOUT` | 任意 | `5ms` | normal/best-effort event の enqueue timeout |
+| `AUDIT_CRITICAL_ENQUEUE_TIMEOUT` | 任意 | `50ms` | critical event の enqueue timeout |
+| `AUDIT_RETRY_MAX_ATTEMPTS` | 任意 | `3` | batch write retry 回数 |
+| `AUDIT_RETRY_INITIAL_BACKOFF` | 任意 | `100ms` | 初回 retry backoff |
+| `AUDIT_RETRY_MAX_BACKOFF` | 任意 | `2s` | 最大 retry backoff |
+| `AUDIT_PUBLIC_MODE` | 任意 | `failure_step` | public gateway step event の `summary`、`step`、`failure_step` |
+| `AUDIT_VERIFY_SUCCESS_SAMPLE_RATE` | 任意 | `0.0` | `/verify` success audit row sampling rate |
+| `AUDIT_VERIFY_FAILURE_SAMPLE_RATE` | 任意 | `1.0` | `/verify` failure audit row sampling rate |
+| `AUDIT_EXCHANGE_SUCCESS_SAMPLE_RATE` | 任意 | `1.0` | `/exchange` success audit row sampling rate |
+| `AUDIT_EXCHANGE_FAILURE_SAMPLE_RATE` | 任意 | `1.0` | `/exchange` failure audit row sampling rate |
 | `AUDIT_RETENTION_DAYS` | 任意 | `90` | retention cleanup 日数。`0` で無効 |
+| `AUDIT_PRUNE_INTERVAL` | 任意 | `24h` | periodic retention pruning interval。`0` で periodic pruning 無効 |
 | `RATE_LIMIT_ENABLED` | 任意 | `true` | `/exchange` と `/verify` の in-memory rate limit |
 | `RATE_LIMIT_REQUESTS` | 任意 | `120` | rate limit window あたりの request 上限 |
 | `RATE_LIMIT_WINDOW` | 任意 | `1m` | rate limit window |
@@ -510,7 +562,11 @@ Dashboard page は gateway request result、exchange request result、verify req
 
 Audit Log page は actor、action、endpoint、result、from、to、page size、method、request ID、path の server-side filter、pagination、detail modal、確認付き reset dialog を提供します。`POST /_admin/api/v1/audit-events/reset` は `{"confirmation":"RESET"}` を要求し、既存 audit event を削除したあと `audit.reset` marker を 1 件残します。
 
-`AUDIT_ENABLED=true` の場合、audit event は SQLite に保存されます。container / Kubernetes で restart 後も履歴を残す場合は `/var/lib/turnstile-appcheck-gateway` を永続 volume として mount してください。`AUDIT_RETENTION_DAYS` が 1 以上なら、起動時に指定日数より古い event を削除します。
+Audit event は Bun-backed repository で保存します。SQLite は local development と軽量 deployment 向けに引き続き対応し、production/high-frequency gateway では PostgreSQL を推奨します。MariaDB/MySQL は既存運用との互換性のため対応しています。旧 SQLite schema の audit row は意図的に migration しません。互換性のない legacy `audit_events` table が見つかった場合は、破棄して新 schema で作り直します。
+
+public gateway の audit policy は endpoint 特性に合わせています。`/exchange` の最終 `exchange.request` summary event は既定で保存されます。Turnstile/Firebase step event は `AUDIT_PUBLIC_MODE` に従い、`summary` は最終 summary のみ、`step` は summary と step、`failure_step` は成功時 summary と失敗/denied/rate-limit 時 step を保存します。`/verify` success row は既定で `AUDIT_VERIFY_SUCCESS_SAMPLE_RATE=0.0` により保存しませんが、failure、denied、missing/invalid token、`rate_limit.denied` は保存します。admin/audit event は常に保存します。
+
+Dashboard の request metrics は async rollup counter を使うため、sample out された `/verify` success も request total と trend に反映されます。audit write は bounded channel と batch INSERT を使います。queue full 時、best-effort event は drop して log/counter に記録し、critical event も `AUDIT_CRITICAL_ENQUEUE_TIMEOUT` までしか待ちません。shutdown 時は `AUDIT_SHUTDOWN_FLUSH_TIMEOUT` 内で queue を drain します。Kubernetes の `terminationGracePeriodSeconds` はこの timeout より長くしてください。
 
 認証モード:
 
@@ -628,6 +684,8 @@ npm install
 npm run check
 npm run build
 ```
+
+`internal/adminui/dist/` 配下の生成物は build artifact として扱い、git では追跡しません。frontend build 前でも Go の embed pattern が成立するよう、placeholder file だけを残します。
 
 contributor / operator 向けの test、CI、release 運用メモは [docs/e2e-and-release.md](docs/e2e-and-release.md) を参照してください。
 

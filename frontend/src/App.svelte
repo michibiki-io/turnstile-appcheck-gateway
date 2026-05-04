@@ -63,7 +63,7 @@
   let me: AdminMe | null = null;
   let metrics: MetricsResponse | null = null;
   let auditOptions: AuditOptions = { actions: [], endpoints: [], results: [] };
-  let page: AuditPage = { items: [], total: 0, nextCursor: null };
+  let page: AuditPage = { items: [], total: 0, nextCursor: null, hasNext: false };
   let activeView: ActiveView = 'dashboard';
   let selected: AuditEvent | null = null;
   let detailOpen = false;
@@ -74,7 +74,9 @@
   let loading = true;
   let error = '';
   let recoverableAuthError = false;
-  let offset = 0;
+  let pageIndex = 0;
+  let cursor = '';
+  let cursorStack: string[] = [];
   let filters: AuditFilters = {
     range: '24h',
     from: '',
@@ -153,7 +155,7 @@
       me = await apiGetWithAuthRecovery<AdminMe>('/me');
       auditOptions = await apiGetWithAuthRecovery<AuditOptions>('/audit-options');
       await loadMetrics(true);
-      await loadAudit(0, true);
+      await loadAudit('', 0, true);
     } catch (err) {
       if (isRecoverableAuthError(err)) {
         recoverableAuthError = true;
@@ -176,10 +178,24 @@
       : await apiGet<MetricsResponse>('/request-metrics', params);
   }
 
-  async function loadAudit(nextOffset: number, withAuthRecovery = false) {
-    offset = Math.max(0, nextOffset);
-    const params = auditParams(filters, pageSize, offset);
+  async function loadAudit(nextCursor: string, nextPageIndex: number, withAuthRecovery = false) {
+    cursor = nextCursor;
+    pageIndex = Math.max(0, nextPageIndex);
+    const params = auditParams(filters, pageSize, cursor);
     page = withAuthRecovery ? await apiGetWithAuthRecovery<AuditPage>('/audit-events', params) : await apiGet<AuditPage>('/audit-events', params);
+  }
+
+  async function loadNextAuditPage() {
+    if (!page.nextCursor) return;
+    cursorStack = [...cursorStack, cursor];
+    await loadAudit(page.nextCursor, pageIndex + 1);
+  }
+
+  async function loadPreviousAuditPage() {
+    if (pageIndex === 0) return;
+    const previous = cursorStack[cursorStack.length - 1] ?? '';
+    cursorStack = cursorStack.slice(0, -1);
+    await loadAudit(previous, pageIndex - 1);
   }
 
   async function applyFilters() {
@@ -187,7 +203,8 @@
     recoverableAuthError = false;
     try {
       await loadMetrics();
-      await loadAudit(0);
+      cursorStack = [];
+      await loadAudit('', 0);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to apply filters';
     }
@@ -584,10 +601,10 @@
       </div>
 
       <div class="flex items-center justify-between px-5 pb-5 pt-3 text-sm">
-        <span>Showing {page.items.length ? offset + 1 : 0}-{offset + page.items.length} of {page.total}</span>
+        <span>Showing page {pageIndex + 1} ({page.items.length} events) of {page.total}</span>
         <div class="flex gap-2">
-          <Button size="sm" color="alternative" disabled={offset === 0} onclick={() => loadAudit(Math.max(0, offset - pageSize))}>Previous</Button>
-          <Button size="sm" color="alternative" disabled={page.nextCursor === null} onclick={() => loadAudit(page.nextCursor ?? offset)}>Next</Button>
+          <Button size="sm" color="alternative" disabled={pageIndex === 0} onclick={loadPreviousAuditPage}>Previous</Button>
+          <Button size="sm" color="alternative" disabled={page.nextCursor === null} onclick={loadNextAuditPage}>Next</Button>
         </div>
       </div>
             </section>

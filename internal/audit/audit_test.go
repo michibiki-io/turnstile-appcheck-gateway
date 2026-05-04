@@ -1,4 +1,4 @@
-package audit
+package audit_test
 
 import (
 	"context"
@@ -6,37 +6,57 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit"
+	"github.com/michibiki-io/turnstile-appcheck-gateway/internal/audit/storage/bunrepo"
 )
 
 func TestStoreListFilteringPaginationMetricsAndReset(t *testing.T) {
-	store, err := Open(context.Background(), filepath.Join(t.TempDir(), "audit.db"))
+	store, err := bunrepo.Open(context.Background(), bunrepo.Config{StorageType: "sqlite", SQLitePath: filepath.Join(t.TempDir(), "audit.db")})
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer store.Close()
 
 	now := time.Now().UTC().Truncate(time.Second)
-	events := []Event{
-		{Timestamp: now.Add(-3 * time.Hour), Actor: "public", Action: "exchange.request", Method: "POST", Path: "/appcheck/api/v1/exchange", Endpoint: "/api/v1/exchange", StatusCode: 200, Result: ResultSuccess, RequestID: "req-1"},
-		{Timestamp: now.Add(-2 * time.Hour), Actor: "public", Action: "exchange.request", Method: "POST", Path: "/appcheck/api/v1/exchange", Endpoint: "/api/v1/exchange", StatusCode: 400, Result: ResultFailure, RequestID: "req-2"},
-		{Timestamp: now.Add(-1 * time.Hour), Actor: "public", Action: "verify.request", Method: "GET", Path: "/appcheck/api/v1/verify", Endpoint: "/api/v1/verify", StatusCode: 401, Result: ResultFailure, RequestID: "req-3"},
-		{Timestamp: now, Actor: "admin@example.com", Action: "audit.view", Method: "GET", Path: "/appcheck/_admin/api/v1/audit-events", Endpoint: "/_admin/api/v1/audit-events", StatusCode: 200, Result: ResultSuccess},
+	events := []audit.Event{
+		{Timestamp: now.Add(-3 * time.Hour), Actor: "public", Action: "exchange.request", Method: "POST", Path: "/appcheck/api/v1/exchange", Endpoint: "/api/v1/exchange", StatusCode: 200, Result: audit.ResultSuccess, RequestID: "req-1"},
+		{Timestamp: now.Add(-2 * time.Hour), Actor: "public", Action: "exchange.request", Method: "POST", Path: "/appcheck/api/v1/exchange", Endpoint: "/api/v1/exchange", StatusCode: 400, Result: audit.ResultFailure, RequestID: "req-2"},
+		{Timestamp: now.Add(-1 * time.Hour), Actor: "public", Action: "verify.request", Method: "GET", Path: "/appcheck/api/v1/verify", Endpoint: "/api/v1/verify", StatusCode: 401, Result: audit.ResultFailure, RequestID: "req-3"},
+		{Timestamp: now, Actor: "admin@example.com", Action: "audit.view", Method: "GET", Path: "/appcheck/_admin/api/v1/audit-events", Endpoint: "/_admin/api/v1/audit-events", StatusCode: 200, Result: audit.ResultSuccess},
 	}
 	for _, event := range events {
-		if err := store.Record(context.Background(), event); err != nil {
-			t.Fatalf("Record() error = %v", err)
+		if err := store.AppendBatch(context.Background(), []audit.Event{event}); err != nil {
+			t.Fatalf("AppendBatch() error = %v", err)
+		}
+		if err := store.AppendMetricRollups(context.Background(), []audit.MetricRollup{audit.NewMetricRollup(event)}); err != nil {
+			t.Fatalf("AppendMetricRollups() error = %v", err)
 		}
 	}
+	got, ok, err := store.Get(context.Background(), pageID(t, store))
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !ok || got.Action == "" {
+		t.Fatalf("Get() missing event: ok=%v event=%#v", ok, got)
+	}
 
-	page, err := store.List(context.Background(), Filter{Action: "exchange.request", Limit: 1, Offset: 1})
+	page, err := store.List(context.Background(), audit.Filter{Action: "exchange.request", Limit: 1, IncludeTotal: true})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if page.Total != 2 || len(page.Items) != 1 || page.Items[0].RequestID != "req-1" {
+	if page.Total != 2 || len(page.Items) != 1 || page.Items[0].RequestID != "req-2" || !page.HasNext {
 		t.Fatalf("unexpected page: %#v", page)
 	}
+	next, err := store.List(context.Background(), audit.Filter{Action: "exchange.request", Limit: 1, Cursor: page.NextCursor, IncludeTotal: true})
+	if err != nil {
+		t.Fatalf("List() next error = %v", err)
+	}
+	if next.Total != 2 || len(next.Items) != 1 || next.Items[0].RequestID != "req-1" || next.HasNext {
+		t.Fatalf("unexpected next page: %#v", next)
+	}
 
-	metrics, err := store.Metrics(context.Background(), MetricsFilter{From: now.Add(-4 * time.Hour), To: now.Add(time.Hour), Bucket: time.Hour})
+	metrics, err := store.Metrics(context.Background(), audit.MetricsFilter{From: now.Add(-4 * time.Hour), To: now.Add(time.Hour), Bucket: time.Hour})
 	if err != nil {
 		t.Fatalf("Metrics() error = %v", err)
 	}
@@ -44,11 +64,11 @@ func TestStoreListFilteringPaginationMetricsAndReset(t *testing.T) {
 		t.Fatalf("unexpected summary: %#v", metrics.Summary)
 	}
 
-	marker := Event{Actor: "admin@example.com", Action: "audit.reset", Result: ResultSuccess, Message: "Admin reset audit log"}
+	marker := audit.Event{Actor: "admin@example.com", Action: "audit.reset", Result: audit.ResultSuccess, Message: "Admin reset audit log"}
 	if err := store.Reset(context.Background(), marker); err != nil {
 		t.Fatalf("Reset() error = %v", err)
 	}
-	page, err = store.List(context.Background(), Filter{})
+	page, err = store.List(context.Background(), audit.Filter{IncludeTotal: true})
 	if err != nil {
 		t.Fatalf("List() after reset error = %v", err)
 	}
@@ -57,26 +77,61 @@ func TestStoreListFilteringPaginationMetricsAndReset(t *testing.T) {
 	}
 }
 
+func TestPruneRetention(t *testing.T) {
+	store, err := bunrepo.Open(context.Background(), bunrepo.Config{StorageType: "sqlite", SQLitePath: filepath.Join(t.TempDir(), "audit.db")})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+	old := audit.Event{Timestamp: time.Now().UTC().AddDate(0, 0, -10), Action: "exchange.request", Result: audit.ResultSuccess}
+	recent := audit.Event{Timestamp: time.Now().UTC(), Action: "exchange.request", Result: audit.ResultSuccess}
+	if err := store.AppendBatch(context.Background(), []audit.Event{old, recent}); err != nil {
+		t.Fatalf("AppendBatch() error = %v", err)
+	}
+	if err := store.PruneRetention(context.Background(), 1); err != nil {
+		t.Fatalf("PruneRetention() error = %v", err)
+	}
+	page, err := store.List(context.Background(), audit.Filter{IncludeTotal: true})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 {
+		t.Fatalf("unexpected pruned page: %#v", page)
+	}
+}
+
+func pageID(t *testing.T, store *bunrepo.Repository) string {
+	t.Helper()
+	page, err := store.List(context.Background(), audit.Filter{Limit: 1})
+	if err != nil {
+		t.Fatalf("List() for id error = %v", err)
+	}
+	if len(page.Items) == 0 {
+		t.Fatal("no audit event found")
+	}
+	return page.Items[0].ID
+}
+
 func TestSafeMetadataDropsSensitiveValues(t *testing.T) {
-	store, err := Open(context.Background(), ":memory:")
+	store, err := bunrepo.Open(context.Background(), bunrepo.Config{StorageType: "sqlite", SQLitePath: ":memory:"})
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer store.Close()
 
-	if err := store.Record(context.Background(), Event{
+	if err := store.AppendBatch(context.Background(), []audit.Event{{
 		Action: "turnstile.verify",
-		Result: ResultFailure,
+		Result: audit.ResultFailure,
 		Metadata: map[string]any{
 			"turnstileToken":      "secret-token",
 			"authorizationHeader": "Bearer secret",
 			"cookie":              "session=secret",
 			"service":             "turnstile",
 		},
-	}); err != nil {
-		t.Fatalf("Record() error = %v", err)
+	}}); err != nil {
+		t.Fatalf("AppendBatch() error = %v", err)
 	}
-	page, err := store.List(context.Background(), Filter{})
+	page, err := store.List(context.Background(), audit.Filter{IncludeTotal: true})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}

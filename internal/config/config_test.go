@@ -41,7 +41,7 @@ func TestLoadFromMapConstructsDefaults(t *testing.T) {
 	if cfg.Admin.Auth.Mode != "header" || len(cfg.Admin.Auth.AllowedGroups) != 1 || cfg.Admin.Auth.AllowedGroups[0] != "gateway-admins" {
 		t.Fatalf("Admin auth defaults = %#v", cfg.Admin.Auth)
 	}
-	if !cfg.Audit.Enabled || cfg.Audit.SQLitePath == "" || cfg.Audit.RetentionDays != 90 {
+	if !cfg.Audit.Enabled || cfg.Audit.StorageType != "sqlite" || cfg.Audit.SQLitePath == "" || !cfg.Audit.AsyncEnabled || cfg.Audit.PublicMode != "failure_step" || cfg.Audit.VerifySuccessSample != 0 || cfg.Audit.VerifyFailureSample != 1 || cfg.Audit.RetentionDays != 90 {
 		t.Fatalf("Audit defaults = %#v", cfg.Audit)
 	}
 }
@@ -142,8 +142,17 @@ func TestLoadFromMapAdminAuditAndRateLimitEnv(t *testing.T) {
 	env["ADMIN_ALLOWED_USERS"] = "admin@example.com, ops@example.com"
 	env["ADMIN_ALLOWED_GROUPS"] = "admins, operators"
 	env["AUDIT_ENABLED"] = "false"
+	env["AUDIT_STORAGE_TYPE"] = "postgres"
+	env["AUDIT_DSN"] = "postgres://user:password@localhost/db?sslmode=disable"
 	env["AUDIT_SQLITE_PATH"] = "/tmp/audit.db"
+	env["AUDIT_ASYNC_ENABLED"] = "false"
+	env["AUDIT_CHANNEL_SIZE"] = "42"
+	env["AUDIT_BATCH_SIZE"] = "7"
+	env["AUDIT_FLUSH_INTERVAL"] = "200ms"
+	env["AUDIT_PUBLIC_MODE"] = "step"
+	env["AUDIT_VERIFY_SUCCESS_SAMPLE_RATE"] = "0.25"
 	env["AUDIT_RETENTION_DAYS"] = "7"
+	env["AUDIT_PRUNE_INTERVAL"] = "12h"
 	env["RATE_LIMIT_ENABLED"] = "false"
 	env["RATE_LIMIT_REQUESTS"] = "5"
 	env["RATE_LIMIT_WINDOW"] = "10s"
@@ -158,7 +167,7 @@ func TestLoadFromMapAdminAuditAndRateLimitEnv(t *testing.T) {
 	if cfg.Admin.Auth.Mode != "none" || len(cfg.Admin.Auth.AllowedUsers) != 2 || len(cfg.Admin.Auth.AllowedGroups) != 2 {
 		t.Fatalf("Admin auth env = %#v", cfg.Admin.Auth)
 	}
-	if cfg.Audit.Enabled || cfg.Audit.SQLitePath != "/tmp/audit.db" || cfg.Audit.RetentionDays != 7 {
+	if cfg.Audit.Enabled || cfg.Audit.StorageType != "postgres" || cfg.Audit.DSN == "" || cfg.Audit.SQLitePath != "/tmp/audit.db" || cfg.Audit.AsyncEnabled || cfg.Audit.ChannelSize != 42 || cfg.Audit.BatchSize != 7 || cfg.Audit.FlushInterval != 200*time.Millisecond || cfg.Audit.PublicMode != "step" || cfg.Audit.VerifySuccessSample != 0.25 || cfg.Audit.RetentionDays != 7 || cfg.Audit.PruneInterval != 12*time.Hour {
 		t.Fatalf("Audit env = %#v", cfg.Audit)
 	}
 	if cfg.RateLimit.Enabled || cfg.RateLimit.RequestsPerWindow != 5 || cfg.RateLimit.Window != 10*time.Second {
