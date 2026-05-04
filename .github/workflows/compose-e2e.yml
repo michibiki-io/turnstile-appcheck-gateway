@@ -14,27 +14,39 @@ on:
       - "scripts/e2e-smoke-mock.sh"
       - "dev/docker-compose.yml"
       - "dev/docker-compose.e2e.yml"
+      - "dev/docker-compose.pg.yml"
+      - "dev/docker-compose.mariadb.yml"
       - "Makefile"
       - ".github/workflows/compose-e2e.yml"
 
 jobs:
   compose-e2e:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: sqlite
+            compose_db_file: ""
+          - name: postgres
+            compose_db_file: "-f dev/docker-compose.pg.yml"
+          - name: mariadb
+            compose_db_file: "-f dev/docker-compose.mariadb.yml"
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run compose mock e2e
+      - name: Run compose mock e2e (${{ matrix.name }})
         run: |
-          make compose-e2e-mock
+          make compose-e2e-mock COMPOSE_DB_FILE="${{ matrix.compose_db_file }}"
 
       - name: Show compose logs on failure
         if: failure()
         run: |
-          docker compose --env-file dev/.env -f dev/docker-compose.yml -f dev/docker-compose.e2e.yml ps || true
-          docker compose --env-file dev/.env -f dev/docker-compose.yml -f dev/docker-compose.e2e.yml logs || true
+          docker compose --env-file dev/.env -f dev/docker-compose.yml -f dev/docker-compose.e2e.yml ${{ matrix.compose_db_file }} ps || true
+          docker compose --env-file dev/.env -f dev/docker-compose.yml -f dev/docker-compose.e2e.yml ${{ matrix.compose_db_file }} logs || true
 
       - name: Stop compose stack
         if: always()
         run: |
-          make compose-e2e-down
+          make compose-e2e-down COMPOSE_DB_FILE="${{ matrix.compose_db_file }}"

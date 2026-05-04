@@ -1,8 +1,27 @@
-.git
-.gitignore
-.github
-README.md
-LICENSE
-*.log
-frontend/node_modules
-.data
+# Keep the Docker build context as an allowlist. The Dockerfile only needs
+# Go sources and frontend build inputs; local test results, compose files,
+# docs, git metadata, and generated artifacts should not invalidate builds.
+*
+
+!go.mod
+!go.sum
+
+!cmd/
+!cmd/**
+
+!internal/
+!internal/**
+internal/adminui/dist/**
+
+!frontend/
+!frontend/index.html
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.json
+!frontend/vite.config.ts
+!frontend/public/
+!frontend/public/**
+!frontend/src/
+!frontend/src/**
+frontend/node_modules/**
+frontend/dist/**

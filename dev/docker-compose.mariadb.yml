@@ -1,0 +1,29 @@
+services:
+  turnstile-appcheck-gateway:
+    environment:
+      AUDIT_STORAGE_TYPE: mariadb
+      AUDIT_DSN: turnstile:turnstile@tcp(mariadb:3306)/turnstile_appcheck_gateway?parseTime=true&charset=utf8mb4&loc=UTC
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+  mariadb:
+    image: mariadb:11.4
+    container_name: dev-mariadb
+    environment:
+      MARIADB_DATABASE: turnstile_appcheck_gateway
+      MARIADB_USER: turnstile
+      MARIADB_PASSWORD: turnstile
+      MARIADB_ROOT_PASSWORD: turnstile-root
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uturnstile -pturnstile --silent"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    networks:
+      - devnet
+    volumes:
+      - mariadb-data:/var/lib/mysql
+
+volumes:
+  mariadb-data:
