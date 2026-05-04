@@ -8,7 +8,7 @@ This chart installs `turnstile-appcheck-gateway`, a Go/Gin gateway that bridges 
 - `GET /readyz`
 - `GET {SUBPATH}/admin/` and `GET {SUBPATH}/_admin/api/v1/...` when the admin dashboard is enabled
 
-The chart separates non-sensitive runtime configuration into a `ConfigMap` and sensitive values into a `Secret`. It supports SQLite audit log persistence with a PVC, an ephemeral `emptyDir` mode, and external PostgreSQL or MariaDB/MySQL audit databases through `config.AUDIT_STORAGE_TYPE` and `config.AUDIT_DSN`.
+The chart separates non-sensitive runtime configuration into a `ConfigMap` and sensitive values into a `Secret`. It supports SQLite audit log persistence with a PVC, an ephemeral `emptyDir` mode, and external PostgreSQL or MariaDB/MySQL audit databases through `config.AUDIT_STORAGE_TYPE` and `secrets.AUDIT_DSN`.
 
 ## Prerequisites
 
@@ -203,12 +203,14 @@ The audit log is designed not to store secret values, tokens, service account JS
 
 PostgreSQL is recommended for production and high-frequency `/verify` traffic:
 
+Because PostgreSQL and MariaDB/MySQL DSNs usually contain credentials, set `secrets.AUDIT_DSN` instead of `config.AUDIT_DSN`. `config.AUDIT_DSN` remains available for non-sensitive SQLite DSN overrides and backward compatibility. When `existingSecret` is used, include an `AUDIT_DSN` key in that Secret.
+
 ```bash
 helm upgrade --install turnstile-appcheck-gateway ./deploy/chart \
   --namespace appcheck \
   --create-namespace \
   --set config.AUDIT_STORAGE_TYPE=postgres \
-  --set config.AUDIT_DSN='postgres://user:password@postgres:5432/turnstile_appcheck_gateway?sslmode=disable' \
+  --set-string secrets.AUDIT_DSN='postgres://user:password@postgres:5432/turnstile_appcheck_gateway?sslmode=disable' \
   --set config.AUDIT_DB_MAX_OPEN_CONNS=20 \
   --set config.AUDIT_DB_MAX_IDLE_CONNS=10 \
   --set config.AUDIT_DB_CONN_MAX_LIFETIME=30m \
@@ -222,7 +224,7 @@ helm upgrade --install turnstile-appcheck-gateway ./deploy/chart \
   --namespace appcheck \
   --create-namespace \
   --set config.AUDIT_STORAGE_TYPE=mariadb \
-  --set config.AUDIT_DSN='user:password@tcp(mariadb:3306)/turnstile_appcheck_gateway?parseTime=true&charset=utf8mb4&loc=UTC'
+  --set-string secrets.AUDIT_DSN='user:password@tcp(mariadb:3306)/turnstile_appcheck_gateway?parseTime=true&charset=utf8mb4&loc=UTC'
 ```
 
 By default, `/verify` success audit rows are not stored one-by-one (`AUDIT_VERIFY_SUCCESS_SAMPLE_RATE=0.0`). They still update rollup metrics used by the admin dashboard. `/verify` failures, denials, missing/invalid token outcomes, and `rate_limit.denied` are persisted. `/exchange` final summaries are persisted by default, step events follow `AUDIT_PUBLIC_MODE`, and admin/audit events are always persisted.
