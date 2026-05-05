@@ -49,8 +49,14 @@ func NewRouter(cfg *config.Config, logger *slog.Logger, exchangeHandler *handler
 	}
 
 	api := r.Group(cfg.AppCheckSubpath)
-	public := api.Group("", middleware.NewRateLimiter(cfg.RateLimit, logger, recorder))
-	public.POST("/api/v1/exchange", exchangeHandler.Handle)
+	rateLimiter := middleware.NewRateLimiter(cfg.RateLimit, logger, recorder)
+	exchange := api.Group("/api/v1/exchange", middleware.ExchangeCORS(cfg.IsExchangeOriginAllowed))
+	exchange.OPTIONS("", func(c *gin.Context) {
+		c.Status(204)
+	})
+	exchange.POST("", rateLimiter, exchangeHandler.Handle)
+
+	public := api.Group("", rateLimiter)
 	public.Any("/api/v1/verify", verifyHandler.Handle)
 	admin.Register(api, cfg, logger, recorder)
 

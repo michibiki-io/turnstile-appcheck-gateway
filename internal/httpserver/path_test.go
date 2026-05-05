@@ -1,9 +1,11 @@
 package httpserver
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -69,6 +71,7 @@ func TestNewRouterRoutes(t *testing.T) {
 	}
 
 	for _, required := range []string{
+		"OPTIONS /appcheck/api/v1/exchange",
 		"POST /appcheck/api/v1/exchange",
 		"GET /healthz",
 		"GET /readyz",
@@ -76,6 +79,101 @@ func TestNewRouterRoutes(t *testing.T) {
 		if !routes[required] {
 			t.Fatalf("missing route: %s", required)
 		}
+	}
+}
+
+func TestNewRouterExchangePreflightRespondsWithCORSHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		AppCheckSubpath:        "/appcheck",
+		HealthPath:             "/healthz",
+		ReadyPath:              "/readyz",
+		AllowedExchangeOrigins: []string{"https://example.com"},
+	}
+
+	exchangeHandler := &handlers.ExchangeHandler{
+		Logger:            slog.Default(),
+		Timeout:           context.WithCancel,
+		TurnstileVerifier: stubTurnstileVerifier{},
+		Exchanger:         stubExchanger{},
+		OriginAllowed:     cfg.IsExchangeOriginAllowed,
+	}
+	verifyHandler := &handlers.VerifyHandler{
+		Logger:        slog.Default(),
+		Verifier:      stubVerifyVerifier{},
+		HeaderName:    "X-Firebase-AppCheck",
+		SuccessStatus: http.StatusNoContent,
+		FailureStatus: http.StatusUnauthorized,
+	}
+
+	r, err := NewRouter(cfg, slog.Default(), exchangeHandler, verifyHandler, health.NewHandler())
+	if err != nil {
+		t.Fatalf("NewRouter() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodOptions, "/appcheck/api/v1/exchange", nil)
+	req.Header.Set("Origin", "https://example.com")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	req.Header.Set("Access-Control-Request-Headers", "content-type")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "https://example.com" {
+		t.Fatalf("Access-Control-Allow-Origin = %q; want %q", got, "https://example.com")
+	}
+	if got := w.Header().Get("Access-Control-Allow-Methods"); got != "POST, OPTIONS" {
+		t.Fatalf("Access-Control-Allow-Methods = %q; want %q", got, "POST, OPTIONS")
+	}
+	if got := w.Header().Get("Access-Control-Allow-Headers"); got != "content-type" {
+		t.Fatalf("Access-Control-Allow-Headers = %q; want %q", got, "content-type")
+	}
+}
+
+func TestNewRouterExchangePostRespondsWithCORSHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		AppCheckSubpath:        "/appcheck",
+		HealthPath:             "/healthz",
+		ReadyPath:              "/readyz",
+		AllowedExchangeOrigins: []string{"https://example.com"},
+	}
+
+	exchangeHandler := &handlers.ExchangeHandler{
+		Logger:            slog.Default(),
+		Timeout:           context.WithCancel,
+		TurnstileVerifier: stubTurnstileVerifier{},
+		Exchanger:         stubExchanger{},
+		OriginAllowed:     cfg.IsExchangeOriginAllowed,
+	}
+	verifyHandler := &handlers.VerifyHandler{
+		Logger:        slog.Default(),
+		Verifier:      stubVerifyVerifier{},
+		HeaderName:    "X-Firebase-AppCheck",
+		SuccessStatus: http.StatusNoContent,
+		FailureStatus: http.StatusUnauthorized,
+	}
+
+	r, err := NewRouter(cfg, slog.Default(), exchangeHandler, verifyHandler, health.NewHandler())
+	if err != nil {
+		t.Fatalf("NewRouter() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/appcheck/api/v1/exchange", bytes.NewBufferString(`{"turnstileToken":"token"}`))
+	req.Header.Set("Origin", "https://example.com")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "https://example.com" {
+		t.Fatalf("Access-Control-Allow-Origin = %q; want %q", got, "https://example.com")
 	}
 }
 

@@ -199,7 +199,7 @@ Configuration is read from environment variables. Use [.env.example](.env.exampl
 | `RATE_LIMIT_REQUESTS` | optional | `120` | requests per rate limit window |
 | `RATE_LIMIT_WINDOW` | optional | `1m` | rate limit window |
 
-Public `/exchange` requests use strict JSON decoding with unknown fields rejected and a capped request body. `turnstileToken` is required and length-limited. Public `/exchange` and `/verify` requests are protected by a lightweight in-memory rate limiter. In multi-instance deployments, each instance keeps its own counters.
+Public `/exchange` requests use strict JSON decoding with unknown fields rejected and a capped request body. `turnstileToken` is required and length-limited. When `Origin` is present, `/exchange` responds to allowed origins with CORS headers and `OPTIONS` preflight handling based on `ALLOWED_EXCHANGE_ORIGINS`. Public `/exchange` and `/verify` requests are protected by a lightweight in-memory rate limiter. In multi-instance deployments, each instance keeps its own counters.
 
 `/exchange` does not implement idempotency. Turnstile response tokens and App Check tokens are short-lived, and replaying the same token-exchange payload can conflict with the external validation flow. Failed client attempts should obtain a fresh Turnstile token before retrying.
 
@@ -542,7 +542,7 @@ docs/images
 | `RATE_LIMIT_REQUESTS` | 任意 | `120` | rate limit window あたりの request 上限 |
 | `RATE_LIMIT_WINDOW` | 任意 | `1m` | rate limit window |
 
-public `/exchange` request は strict JSON decoding を使い、unknown field を拒否し、request body size を制限します。`turnstileToken` は必須で length limit があります。public `/exchange` と `/verify` は軽量な in-memory rate limiter で保護されます。multi-instance 構成では instance ごとに counter を持ちます。
+public `/exchange` request は strict JSON decoding を使い、unknown field を拒否し、request body size を制限します。`turnstileToken` は必須で length limit があります。`Origin` がある場合、`/exchange` は `ALLOWED_EXCHANGE_ORIGINS` に基づいて allowed origin に CORS header と `OPTIONS` preflight 応答を返します。public `/exchange` と `/verify` は軽量な in-memory rate limiter で保護されます。multi-instance 構成では instance ごとに counter を持ちます。
 
 `/exchange` は idempotency を実装していません。Turnstile response token と App Check token は短命で、同じ token-exchange payload の replay は外部検証 flow と相性がよくありません。失敗時は client が新しい Turnstile token を取得して再試行してください。
 
