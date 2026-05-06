@@ -56,20 +56,25 @@ jobs:
           set -euo pipefail
           echo "No release is required for PR #${PR_NUMBER}."
 
+      - name: Set up Helm
+        if: steps.version.outputs.release_required == 'true'
+        uses: azure/setup-helm@v4
+
+      - name: Set up kind
+        if: steps.version.outputs.release_required == 'true'
+        uses: engineerd/setup-kind@v0.6.2
+
       - name: Run release integration e2e before release
         if: steps.version.outputs.release_required == 'true'
         env:
+          KIND_E2E_MODE: half-real
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           FIREBASE_APP_RESOURCE: ${{ secrets.FIREBASE_APP_RESOURCE }}
           GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
-          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
-          REAL_E2E_TURNSTILE_TOKEN: ${{ secrets.REAL_E2E_TURNSTILE_TOKEN }}
         run: |
           set -euo pipefail
-          # Default path is dummy Turnstile + real Firebase.
-          # Only when REAL_E2E_TURNSTILE_TOKEN is supplied does the script switch to full-real.
-          # TURNSTILE_SECRET_KEY is only needed for that optional full-real path.
+          # Merge-triggered release always uses dummy Turnstile + real Firebase.
           ./scripts/e2e-real-release.sh
 
       - name: Normalize image name

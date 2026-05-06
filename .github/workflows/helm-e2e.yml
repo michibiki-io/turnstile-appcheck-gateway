@@ -13,6 +13,8 @@ on:
       - "cmd/**"
       - "scripts/helm-e2e-kind.sh"
       - "scripts/e2e-smoke-mock.sh"
+      - "scripts/e2e-appcheck-real.sh"
+      - "scripts/e2e-traefik-cors.sh"
       - "Makefile"
       - ".github/workflows/helm-e2e.yml"
 
