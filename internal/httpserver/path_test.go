@@ -276,6 +276,55 @@ func TestNewRouterVerifyForwardAuthPreflightRespondsWithCORSHeaders(t *testing.T
 	}
 }
 
+func TestNewRouterVerifyForwardAuthPreflightWithoutAccessControlRequestHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		AppCheckSubpath:        "/appcheck",
+		HealthPath:             "/healthz",
+		ReadyPath:              "/readyz",
+		AllowedExchangeOrigins: []string{"https://example.com"},
+		VerifyHeaderName:       "X-Firebase-AppCheck",
+	}
+
+	exchangeHandler := &handlers.ExchangeHandler{
+		Logger:            slog.Default(),
+		Timeout:           context.WithCancel,
+		TurnstileVerifier: stubTurnstileVerifier{},
+		Exchanger:         stubExchanger{},
+		OriginAllowed:     cfg.IsExchangeOriginAllowed,
+	}
+	verifyHandler := &handlers.VerifyHandler{
+		Logger:        slog.Default(),
+		Verifier:      stubVerifyVerifier{},
+		HeaderName:    "X-Firebase-AppCheck",
+		SuccessStatus: http.StatusNoContent,
+		FailureStatus: http.StatusUnauthorized,
+	}
+
+	r, err := NewRouter(cfg, slog.Default(), exchangeHandler, verifyHandler, health.NewHandler())
+	if err != nil {
+		t.Fatalf("NewRouter() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/appcheck/api/v1/verify", nil)
+	req.Header.Set("Origin", "https://example.com")
+	req.Header.Set("X-Forwarded-Method", http.MethodOptions)
+	req.Header.Set("X-Forwarded-Uri", "/mx-api/api/v1/validate")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "https://example.com" {
+		t.Fatalf("Access-Control-Allow-Origin = %q; want %q", got, "https://example.com")
+	}
+	if got := w.Header().Get("Access-Control-Allow-Headers"); got != "Content-Type, X-Firebase-AppCheck" {
+		t.Fatalf("Access-Control-Allow-Headers = %q; want %q", got, "Content-Type, X-Firebase-AppCheck")
+	}
+}
+
 func TestNewRouterVerifyGetWithoutTokenStillRequiresAppCheck(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{

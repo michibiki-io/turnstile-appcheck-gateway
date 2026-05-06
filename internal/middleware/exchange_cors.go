@@ -42,7 +42,7 @@ func VerifyCORS(originAllowed func(string) bool, verifyHeaderName string) gin.Ha
 		handlePreflight:         true,
 		allowForwardedPreflight: true,
 		validateRequestedMethod: true,
-		requirePreflightHeaders: true,
+		requirePreflightHeaders: false,
 	})
 }
 
