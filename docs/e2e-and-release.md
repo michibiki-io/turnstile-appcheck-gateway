@@ -11,19 +11,13 @@ Pull Request CI uses mock mode. It does not contact real Cloudflare Turnstile or
 Commands:
 
 ```bash
-make compose-e2e-mock
-make compose-e2e-mock-pg
-make compose-e2e-mock-mariadb
-make compose-e2e-down
 make e2e-kind-mock
 ```
-
-`compose-e2e-mock` uses the Compose override in `dev/docker-compose.e2e.yml`.
-PostgreSQL and MariaDB audit storage variants add `dev/docker-compose.pg.yml` or `dev/docker-compose.mariadb.yml` with Compose `-f`.
 
 For k6 audit storage load tests, see [Load Testing](load-testing.md).
 
 `e2e-kind-mock` uses a repository-local kubeconfig under `.tmp/` and never targets `~/.kube/config`.
+It installs Traefik in the kind cluster, routes all smoke checks through Traefik, and verifies protected-route CORS behavior for same-origin requests, allowed cross-origin preflight, allowed cross-origin requests, denied origins, and spoofed `X-Forwarded-Method` bypass attempts.
 
 Keep the kind cluster:
 
@@ -37,46 +31,65 @@ Cleanup:
 make e2e-kind-clean
 ```
 
-### Local real e2e
+### Development Compose smoke
 
-Local real e2e has two modes.
+Compose checks are local development smoke tests only. They are not production-like e2e and are not run as pull request CI.
 
-- `full-real`: real Turnstile + real Firebase
+```bash
+make compose-e2e-mock
+make compose-e2e-mock-pg
+make compose-e2e-mock-mariadb
+make compose-e2e-down
+```
+
+`compose-e2e-mock` uses the Compose override in `dev/docker-compose.e2e.yml`.
+PostgreSQL and MariaDB audit storage variants add `dev/docker-compose.pg.yml` or `dev/docker-compose.mariadb.yml` with Compose `-f`.
+
+### Production-like kind e2e
+
+Production-like e2e is centralized on kind. It installs the Helm chart, installs Traefik, creates the protected backend route, and validates the forwardAuth + CORS path through Traefik.
+
+Modes:
+
+- `mock`: no external Cloudflare Turnstile or Firebase App Check calls
 - `half-real`: dummy Turnstile + real Firebase
+- `full-real`: real Turnstile + real Firebase
 
-Direct full-real:
-
-```bash
-REAL_E2E_TURNSTILE_TOKEN='...' make e2e-real-local
-```
-
-Manual full-real preparation:
+Commands:
 
 ```bash
-make e2e-real-local
+make e2e-kind-mock
+make e2e-kind-half-real
+REAL_E2E_TURNSTILE_TOKEN='...' make e2e-kind-full-real
 ```
 
-This starts the local stack and prints a `localhost` frontend URL. Open that page, obtain a Turnstile token, then run the continuation snippet shown in the page.
-
-Force the dummy fallback:
+If you need to obtain a real Turnstile token in a browser first, prepare the local kind frontend:
 
 ```bash
-LOCAL_E2E_FORCE_HALF_REAL=true make e2e-real-local
+make e2e-kind-full-real-prepare
 ```
 
-Mode is printed explicitly in the logs.
+Open the printed URL, complete Turnstile, then run the snippet shown in the page from the repository root. The snippet uses a different local port, so it can run while the prepare process is still active.
 
-- `turnstile mode: full-real (REAL_E2E_TURNSTILE_TOKEN)`
-- `turnstile mode: half-real (dummy-turnstile-real-firebase)`
+For `half-real` and `full-real`, the script reads required Firebase values from the environment first, then `dev/.env`, then `.env`.
+
+Required values:
+
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_APP_ID` or `FIREBASE_APP_RESOURCE`
+- `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64`
+
+`full-real` also requires:
+
+- `TURNSTILE_SECRET_KEY`
+- `REAL_E2E_TURNSTILE_TOKEN`
 
 ### Release e2e
 
-The release workflow runs integration e2e before tag creation, image push, Helm chart push, and GitHub Release creation.
+The release workflow runs kind production-like integration e2e before tag creation, image push, Helm chart push, and GitHub Release creation.
 
-Release modes:
-
-- `full-real`: only when `REAL_E2E_TURNSTILE_TOKEN` is supplied
-- `half-real`: default path, using dummy Turnstile + real Firebase
+Merge-triggered release always uses `half-real`: dummy Turnstile + real Firebase.
+Manual `release-e2e` workflow runs use the same wrapper, and switch to `full-real` only when the `REAL_E2E_TURNSTILE_TOKEN` secret is supplied.
 
 Required GitHub Secrets:
 
@@ -90,7 +103,9 @@ Optional GitHub Secrets:
 - `TURNSTILE_SECRET_KEY`
 - `REAL_E2E_TURNSTILE_TOKEN`
 
-The default release path is half-real, so Turnstile secrets are not required unless the optional full-real path is enabled.
+The merge-triggered release path does not require Turnstile secrets.
+
+Release e2e routes a protected backend through Traefik and validates same-origin 2xx/4xx, allowed cross-origin 2xx/4xx, allowed preflight CORS headers, denied-origin preflight behavior, and spoofed `X-Forwarded-Method` bypass prevention.
 
 ### Manual branch validation
 
@@ -143,14 +158,14 @@ Notes:
 
 ### Relevant files
 
-- `.github/workflows/compose-e2e.yml`
 - `.github/workflows/helm-e2e.yml`
 - `.github/workflows/release.yml`
 - `.github/workflows/release-e2e.yml`
 - `scripts/act-release-e2e.sh`
+- `scripts/e2e-appcheck-real.sh`
 - `scripts/e2e-smoke-mock.sh`
+- `scripts/e2e-traefik-cors.sh`
 - `scripts/helm-e2e-kind.sh`
-- `scripts/e2e-real-local.sh`
 - `scripts/e2e-real-release.sh`
 
 ## 日本語
@@ -164,19 +179,13 @@ Pull Request CI は mock mode を使います。real Cloudflare Turnstile / Fire
 実行コマンド:
 
 ```bash
-make compose-e2e-mock
-make compose-e2e-mock-pg
-make compose-e2e-mock-mariadb
-make compose-e2e-down
 make e2e-kind-mock
 ```
-
-`compose-e2e-mock` は `dev/docker-compose.e2e.yml` を使います。
-PostgreSQL / MariaDB の audit storage variant は `dev/docker-compose.pg.yml` または `dev/docker-compose.mariadb.yml` を Compose `-f` で追加します。
 
 k6 による audit storage load test は [Load Testing](load-testing.md) を参照してください。
 
 `e2e-kind-mock` は `.tmp/` 配下の repo-local kubeconfig を使い、`~/.kube/config` は使いません。
+kind cluster 内に Traefik を install し、smoke check は Traefik 経由で実行します。protected route の CORS 挙動として same-origin request、allowed cross-origin preflight、allowed cross-origin request、denied origin、`X-Forwarded-Method` spoofing による bypass 試行を検証します。
 
 kind cluster を残す:
 
@@ -190,46 +199,65 @@ cleanup:
 make e2e-kind-clean
 ```
 
-### local real e2e
+### 開発用 Compose smoke
 
-local real e2e には 2 つの mode があります。
+Compose check は local development smoke test 専用です。production-like e2e ではなく、pull request CI としては実行しません。
 
-- `full-real`: real Turnstile + real Firebase
+```bash
+make compose-e2e-mock
+make compose-e2e-mock-pg
+make compose-e2e-mock-mariadb
+make compose-e2e-down
+```
+
+`compose-e2e-mock` は `dev/docker-compose.e2e.yml` を使います。
+PostgreSQL / MariaDB の audit storage variant は `dev/docker-compose.pg.yml` または `dev/docker-compose.mariadb.yml` を Compose `-f` で追加します。
+
+### production-like kind e2e
+
+production-like e2e は kind に一本化しています。Helm chart と Traefik を kind cluster に install し、protected backend route を作成して、Traefik 経由の forwardAuth + CORS path を検証します。
+
+mode:
+
+- `mock`: real Cloudflare Turnstile / Firebase App Check には接続しません
 - `half-real`: dummy Turnstile + real Firebase
+- `full-real`: real Turnstile + real Firebase
 
-direct full-real:
-
-```bash
-REAL_E2E_TURNSTILE_TOKEN='...' make e2e-real-local
-```
-
-manual full-real 準備:
+実行コマンド:
 
 ```bash
-make e2e-real-local
+make e2e-kind-mock
+make e2e-kind-half-real
+REAL_E2E_TURNSTILE_TOKEN='...' make e2e-kind-full-real
 ```
 
-この実行で local stack が起動し、`localhost` の frontend URL が表示されます。そのページで Turnstile token を取得し、画面に表示される continuation snippet を repo root で実行してください。
-
-dummy fallback を明示する:
+browser で real Turnstile token を先に取得する場合は、local kind frontend を準備します。
 
 ```bash
-LOCAL_E2E_FORCE_HALF_REAL=true make e2e-real-local
+make e2e-kind-full-real-prepare
 ```
 
-mode は log に明示されます。
+表示された URL を開き、Turnstile を完了した後、画面に表示される snippet を repository root で実行します。snippet は別の local port を使うため、prepare process を起動したまま次の full-real e2e を実行できます。
 
-- `turnstile mode: full-real (REAL_E2E_TURNSTILE_TOKEN)`
-- `turnstile mode: half-real (dummy-turnstile-real-firebase)`
+`half-real` / `full-real` では、必要な Firebase 値を環境変数、`dev/.env`、`.env` の順に読みます。
+
+必須値:
+
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_APP_ID` または `FIREBASE_APP_RESOURCE`
+- `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64`
+
+`full-real` では追加で以下が必要です。
+
+- `TURNSTILE_SECRET_KEY`
+- `REAL_E2E_TURNSTILE_TOKEN`
 
 ### release e2e
 
-release workflow は tag 作成、image push、Helm chart push、GitHub Release 作成の前に integration e2e を実行します。
+release workflow は tag 作成、image push、Helm chart push、GitHub Release 作成の前に kind production-like integration e2e を実行します。
 
-release mode:
-
-- `full-real`: `REAL_E2E_TURNSTILE_TOKEN` がある場合のみ
-- `half-real`: 既定。dummy Turnstile + real Firebase
+merge trigger の release は常に `half-real`: dummy Turnstile + real Firebase を使います。
+手動の `release-e2e` workflow は同じ wrapper を使い、`REAL_E2E_TURNSTILE_TOKEN` secret が渡された場合のみ `full-real` に切り替わります。
 
 必須 GitHub Secrets:
 
@@ -243,7 +271,9 @@ release mode:
 - `TURNSTILE_SECRET_KEY`
 - `REAL_E2E_TURNSTILE_TOKEN`
 
-既定 path は half-real なので、optional な full-real を使わない限り Turnstile secret は不要です。
+merge trigger の release path では Turnstile secret は不要です。
+
+release e2e は Traefik 経由の protected backend を検証します。same-origin の 2xx/4xx、allowed cross-origin の 2xx/4xx、allowed preflight の CORS header、denied origin の preflight 挙動、`X-Forwarded-Method` spoofing による bypass 防止を確認します。
 
 ### 任意 branch の手動検証
 
@@ -296,12 +326,12 @@ ENV_FILE=.env make act-release-e2e
 
 ### 関連ファイル
 
-- `.github/workflows/compose-e2e.yml`
 - `.github/workflows/helm-e2e.yml`
 - `.github/workflows/release.yml`
 - `.github/workflows/release-e2e.yml`
 - `scripts/act-release-e2e.sh`
+- `scripts/e2e-appcheck-real.sh`
 - `scripts/e2e-smoke-mock.sh`
+- `scripts/e2e-traefik-cors.sh`
 - `scripts/helm-e2e-kind.sh`
-- `scripts/e2e-real-local.sh`
 - `scripts/e2e-real-release.sh`

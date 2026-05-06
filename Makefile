@@ -1,4 +1,4 @@
-.PHONY: compose-e2e-mock compose-e2e-mock-pg compose-e2e-mock-mariadb compose-e2e-down compose-e2e-down-pg compose-e2e-down-mariadb audit-load-k6 e2e-kind-mock e2e-kind-keep e2e-kind-clean e2e-real-local act-release-e2e
+.PHONY: compose-e2e-mock compose-e2e-mock-pg compose-e2e-mock-mariadb compose-e2e-down compose-e2e-down-pg compose-e2e-down-mariadb audit-load-k6 e2e-kind-mock e2e-kind-half-real e2e-kind-full-real e2e-kind-full-real-prepare e2e-kind-keep e2e-kind-clean act-release-e2e
 
 COMPOSE_E2E_BASE_FILES := -f dev/docker-compose.yml -f dev/docker-compose.e2e.yml
 COMPOSE_E2E_FILES := $(COMPOSE_E2E_BASE_FILES) $(COMPOSE_DB_FILE)
@@ -29,20 +29,28 @@ audit-load-k6:
 	./scripts/k6-audit-load-matrix.sh
 
 e2e-kind-mock:
-	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh
-	./scripts/helm-e2e-kind.sh
+	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh scripts/e2e-appcheck-real.sh scripts/e2e-traefik-cors.sh
+	KIND_E2E_MODE=mock ./scripts/helm-e2e-kind.sh
+
+e2e-kind-half-real:
+	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh scripts/e2e-appcheck-real.sh scripts/e2e-traefik-cors.sh
+	KIND_E2E_MODE=half-real ./scripts/helm-e2e-kind.sh
+
+e2e-kind-full-real:
+	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh scripts/e2e-appcheck-real.sh scripts/e2e-traefik-cors.sh
+	KIND_E2E_MODE=full-real ./scripts/helm-e2e-kind.sh
+
+e2e-kind-full-real-prepare:
+	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh scripts/e2e-appcheck-real.sh scripts/e2e-traefik-cors.sh
+	KIND_E2E_MODE=full-real-prepare ./scripts/helm-e2e-kind.sh
 
 e2e-kind-keep:
-	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh
+	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh scripts/e2e-appcheck-real.sh scripts/e2e-traefik-cors.sh
 	KEEP_CLUSTER=true ./scripts/helm-e2e-kind.sh
 
 e2e-kind-clean:
 	kind delete cluster --name turnstile-appcheck-gateway-e2e || true
 	rm -f .tmp/kind-turnstile-appcheck-gateway-e2e.kubeconfig || true
-
-e2e-real-local:
-	chmod +x scripts/e2e-real-local.sh
-	./scripts/e2e-real-local.sh
 
 act-release-e2e:
 	chmod +x scripts/act-release-e2e.sh

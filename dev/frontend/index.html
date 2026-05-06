@@ -129,17 +129,17 @@
 
         <label for="turnstileToken">Turnstile token</label>
         <textarea id="turnstileToken" placeholder="Turnstileウィジェットで得たtokenを貼り付け"></textarea>
-        <label for="realE2ESnippet">Local real e2e continuation snippet</label>
+        <label for="realE2ESnippet">Kind full-real e2e snippet</label>
         <textarea
           id="realE2ESnippet"
           readonly
-          placeholder="token取得後に、repo rootで再開用snippetを実行できます"
+          placeholder="token取得後に、repo rootでkind full-real e2eを実行できます"
         ></textarea>
         <div class="row">
           <button class="secondary" id="copyRealE2ESnippetBtn" type="button">snippetをコピー</button>
         </div>
         <div class="hint">
-          `scripts/e2e-real-local.sh` が manual full-real 準備 mode で起動された場合、この snippet で e2e を継続できます。
+          token取得後に、この snippet で kind full-real e2e を実行できます。
         </div>
 
         <label>
@@ -197,18 +197,19 @@
       }
 
       function renderRealE2ESnippet(token) {
-        const stateDir = (params.get("e2e_state_dir") || "").trim();
-        const envFile = (params.get("e2e_env_file") || "").trim();
-        if (!token || !stateDir) {
+        if (!token) {
           realE2ESnippet.value = "";
           return;
         }
-        const parts = [
-          `ENV_FILE='${shellEscapeSingleQuote(envFile)}'`,
-          `REAL_E2E_LOCAL_STATE_DIR='${shellEscapeSingleQuote(stateDir)}'`,
+        const nextLocalPort = (params.get("next_local_port") || "").trim();
+        const parts = ["env"];
+        if (nextLocalPort) {
+          parts.push(`LOCAL_PORT='${shellEscapeSingleQuote(nextLocalPort)}'`);
+        }
+        parts.push(
           `REAL_E2E_TURNSTILE_TOKEN='${shellEscapeSingleQuote(token)}'`,
-          "./scripts/e2e-real-local.sh --continue"
-        ];
+          "make e2e-kind-full-real"
+        );
         realE2ESnippet.value = parts.join(" ");
       }
 
@@ -456,12 +457,12 @@
       document.getElementById("copyRealE2ESnippetBtn").addEventListener("click", async () => {
         const snippet = realE2ESnippet.value.trim();
         if (!snippet) {
-          setOutput("snippet", "continuation snippet はまだ生成されていません。");
+          setOutput("snippet", "kind full-real e2e snippet はまだ生成されていません。");
           return;
         }
         try {
           await copyText(realE2ESnippet);
-          setOutput("snippet", "continuation snippet を clipboard にコピーしました。");
+          setOutput("snippet", "kind full-real e2e snippet を clipboard にコピーしました。");
         } catch (err) {
           setOutput("snippet-copy-error", String(err));
         }
