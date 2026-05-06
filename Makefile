@@ -29,11 +29,11 @@ audit-load-k6:
 	./scripts/k6-audit-load-matrix.sh
 
 e2e-kind-mock:
-	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh
+	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh scripts/e2e-traefik-cors.sh
 	./scripts/helm-e2e-kind.sh
 
 e2e-kind-keep:
-	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh
+	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh scripts/e2e-traefik-cors.sh
 	KEEP_CLUSTER=true ./scripts/helm-e2e-kind.sh
 
 e2e-kind-clean:

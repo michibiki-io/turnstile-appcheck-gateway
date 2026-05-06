@@ -24,6 +24,7 @@ PostgreSQL and MariaDB audit storage variants add `dev/docker-compose.pg.yml` or
 For k6 audit storage load tests, see [Load Testing](load-testing.md).
 
 `e2e-kind-mock` uses a repository-local kubeconfig under `.tmp/` and never targets `~/.kube/config`.
+It installs Traefik in the kind cluster, routes all smoke checks through Traefik, and verifies protected-route CORS behavior for same-origin requests, allowed cross-origin preflight, allowed cross-origin requests, denied origins, and spoofed `X-Forwarded-Method` bypass attempts.
 
 Keep the kind cluster:
 
@@ -177,6 +178,7 @@ PostgreSQL / MariaDB の audit storage variant は `dev/docker-compose.pg.yml` �
 k6 による audit storage load test は [Load Testing](load-testing.md) を参照してください。
 
 `e2e-kind-mock` は `.tmp/` 配下の repo-local kubeconfig を使い、`~/.kube/config` は使いません。
+kind cluster 内に Traefik を install し、smoke check は Traefik 経由で実行します。protected route の CORS 挙動として same-origin request、allowed cross-origin preflight、allowed cross-origin request、denied origin、`X-Forwarded-Method` spoofing による bypass 試行を検証します。
 
 kind cluster を残す:
 
