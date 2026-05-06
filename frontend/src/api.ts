@@ -71,7 +71,6 @@ export type AuditOptions = {
 };
 
 export type AuditFilters = {
-  range: string;
   from: string;
   to: string;
   pageSize: string;
@@ -181,11 +180,6 @@ export function auditParams(filters: AuditFilters, limit: number, cursor: string
   }
   if (filters.to) {
     params.set('to', new Date(filters.to).toISOString());
-  }
-  if (!filters.from && !filters.to) {
-    const rangeParams = rangeToParams(filters.range);
-    params.set('from', rangeParams.get('from') ?? '');
-    params.set('to', rangeParams.get('to') ?? '');
   }
   params.set('limit', String(limit));
   if (cursor) params.set('cursor', cursor);
