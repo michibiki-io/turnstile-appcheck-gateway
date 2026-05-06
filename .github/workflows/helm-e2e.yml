@@ -21,6 +21,16 @@ on:
 jobs:
   helm-e2e:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: mock-sqlite
+            target: e2e-kind-mock
+          - name: half-real-postgres
+            target: e2e-kind-half-real-pg
+          - name: half-real-mariadb
+            target: e2e-kind-half-real-mariadb
 
     steps:
       - uses: actions/checkout@v4
@@ -31,6 +41,11 @@ jobs:
       - name: Set up kind
         uses: engineerd/setup-kind@v0.6.2
 
-      - name: Run Helm chart mock e2e on kind
+      - name: Run Helm chart e2e on kind (${{ matrix.name }})
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_APP_RESOURCE: ${{ secrets.FIREBASE_APP_RESOURCE }}
+          GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
         run: |
-          KEEP_ON_FAILURE=false make e2e-kind-mock
+          KEEP_ON_FAILURE=false make ${{ matrix.target }}

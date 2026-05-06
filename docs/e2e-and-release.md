@@ -4,20 +4,22 @@
 
 This document is for contributors and operators who need to run e2e tests, validate the Helm chart, or understand release automation. 
 
-### PR mock e2e
+### PR Helm e2e
 
-Pull Request CI uses mock mode. It does not contact real Cloudflare Turnstile or Firebase App Check.
+Pull Request CI runs Helm e2e on kind. The mock SQLite path does not contact real Cloudflare Turnstile or Firebase App Check. PostgreSQL and MariaDB variants run half-real mode with dummy Turnstile + real Firebase.
 
 Commands:
 
 ```bash
 make e2e-kind-mock
+make e2e-kind-half-real-pg
+make e2e-kind-half-real-mariadb
 ```
 
 For k6 audit storage load tests, see [Load Testing](load-testing.md).
 
-`e2e-kind-mock` uses a repository-local kubeconfig under `.tmp/` and never targets `~/.kube/config`.
-It installs Traefik in the kind cluster, routes all smoke checks through Traefik, and verifies protected-route CORS behavior for same-origin requests, allowed cross-origin preflight, allowed cross-origin requests, denied origins, and spoofed `X-Forwarded-Method` bypass attempts.
+The kind e2e scripts use a repository-local kubeconfig under `.tmp/` and never target `~/.kube/config`.
+They install Traefik in the kind cluster, route checks through Traefik, and verify protected-route CORS behavior for same-origin requests, allowed cross-origin preflight, allowed cross-origin requests, denied origins, and spoofed `X-Forwarded-Method` bypass attempts.
 
 Keep the kind cluster:
 
@@ -60,8 +62,12 @@ Commands:
 ```bash
 make e2e-kind-mock
 make e2e-kind-half-real
+make e2e-kind-half-real-pg
+make e2e-kind-half-real-mariadb
 REAL_E2E_TURNSTILE_TOKEN='...' make e2e-kind-full-real
 ```
+
+`e2e-kind-half-real` uses SQLite with `emptyDir`. The `-pg` and `-mariadb` targets create an ephemeral database Deployment and configure the chart with `AUDIT_STORAGE_TYPE` and `AUDIT_DSN`.
 
 If you need to obtain a real Turnstile token in a browser first, prepare the local kind frontend:
 
@@ -172,20 +178,22 @@ Notes:
 
 このドキュメントは、e2e test、Helm chart 検証、release automation を扱う contributor / operator 向けです。
 
-### PR 用 mock e2e
+### PR 用 Helm e2e
 
-Pull Request CI は mock mode を使います。real Cloudflare Turnstile / Firebase App Check には接続しません。
+Pull Request CI は kind 上の Helm e2e を実行します。mock SQLite path は real Cloudflare Turnstile / Firebase App Check には接続しません。PostgreSQL / MariaDB variant は dummy Turnstile + real Firebase の half-real mode で実行します。
 
 実行コマンド:
 
 ```bash
 make e2e-kind-mock
+make e2e-kind-half-real-pg
+make e2e-kind-half-real-mariadb
 ```
 
 k6 による audit storage load test は [Load Testing](load-testing.md) を参照してください。
 
-`e2e-kind-mock` は `.tmp/` 配下の repo-local kubeconfig を使い、`~/.kube/config` は使いません。
-kind cluster 内に Traefik を install し、smoke check は Traefik 経由で実行します。protected route の CORS 挙動として same-origin request、allowed cross-origin preflight、allowed cross-origin request、denied origin、`X-Forwarded-Method` spoofing による bypass 試行を検証します。
+kind e2e script は `.tmp/` 配下の repo-local kubeconfig を使い、`~/.kube/config` は使いません。
+kind cluster 内に Traefik を install し、check は Traefik 経由で実行します。protected route の CORS 挙動として same-origin request、allowed cross-origin preflight、allowed cross-origin request、denied origin、`X-Forwarded-Method` spoofing による bypass 試行を検証します。
 
 kind cluster を残す:
 
@@ -228,8 +236,12 @@ mode:
 ```bash
 make e2e-kind-mock
 make e2e-kind-half-real
+make e2e-kind-half-real-pg
+make e2e-kind-half-real-mariadb
 REAL_E2E_TURNSTILE_TOKEN='...' make e2e-kind-full-real
 ```
+
+`e2e-kind-half-real` は SQLite + `emptyDir` を使います。`-pg` / `-mariadb` target は ephemeral な database Deployment を作成し、chart に `AUDIT_STORAGE_TYPE` と `AUDIT_DSN` を設定します。
 
 browser で real Turnstile token を先に取得する場合は、local kind frontend を準備します。
 
