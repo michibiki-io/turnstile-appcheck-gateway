@@ -56,8 +56,8 @@ func NewRouter(cfg *config.Config, logger *slog.Logger, exchangeHandler *handler
 	})
 	exchange.POST("", rateLimiter, exchangeHandler.Handle)
 
-	verify := api.Group("/api/v1/verify", middleware.VerifyCORS(cfg.IsExchangeOriginAllowed, cfg.VerifyHeaderName))
-	verify.Any("", rateLimiter, verifyHandler.Handle)
+	public := api.Group("", rateLimiter)
+	public.Any("/api/v1/verify", verifyHandler.Handle)
 	admin.Register(api, cfg, logger, recorder)
 
 	return r, nil
