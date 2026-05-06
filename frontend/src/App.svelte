@@ -77,8 +77,8 @@
   let pageIndex = 0;
   let cursor = '';
   let cursorStack: string[] = [];
+  let metricsRange = '24h';
   let filters: AuditFilters = {
-    range: '24h',
     from: '',
     to: '',
     pageSize: '25',
@@ -169,10 +169,7 @@
   }
 
   async function loadMetrics(withAuthRecovery = false) {
-    const params = rangeToParams(filters.range);
-    if (filters.endpoint) params.set('endpoint', filters.endpoint);
-    if (filters.method) params.set('method', filters.method);
-    if (filters.result) params.set('result', filters.result);
+    const params = rangeToParams(metricsRange);
     metrics = withAuthRecovery
       ? await apiGetWithAuthRecovery<MetricsResponse>('/request-metrics', params)
       : await apiGet<MetricsResponse>('/request-metrics', params);
@@ -202,7 +199,6 @@
     error = '';
     recoverableAuthError = false;
     try {
-      await loadMetrics();
       cursorStack = [];
       await loadAudit('', 0);
     } catch (err) {
@@ -362,15 +358,14 @@
 
     <div class="flex min-h-screen flex-1 flex-col lg:pl-64">
       <header class="sticky top-0 z-20 flex min-h-16 items-center justify-end border-b border-slate-200 bg-slate-100/95 px-4 backdrop-blur sm:px-6 lg:px-8">
-        <div class="flex flex-col items-end gap-1 text-sm text-slate-600">
-          {#if me}
-            <div>
-              <span class="font-medium text-slate-900">{me.user}</span>
-              <span class="mx-2">/</span>
-              <span>{me.mode}</span>
-            </div>
-          {/if}
-        </div>
+        {#if me}
+          <div class="inline-flex min-w-0 items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cyan-50 text-cyan-700">
+              <Icon icon="lets-icons:user" class="h-5 w-5" />
+            </span>
+            <span class="max-w-[12rem] truncate text-sm font-semibold text-slate-950">{me.user || me.email || 'anonymous'}</span>
+          </div>
+        {/if}
       </header>
 
       <div class="flex-1 px-4 py-5 sm:px-6 lg:px-8">
@@ -447,7 +442,7 @@
                 </div>
                 <div class="flex flex-wrap gap-2">
                   {#each ranges as range}
-                    <Button size="sm" color={filters.range === range.value ? 'blue' : 'alternative'} onclick={async () => { filters.range = range.value; await applyFilters(); }}>
+                    <Button size="sm" color={metricsRange === range.value ? 'blue' : 'alternative'} onclick={async () => { metricsRange = range.value; await loadMetrics(); }}>
                       {range.label}
                     </Button>
                   {/each}
