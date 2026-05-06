@@ -1,4 +1,4 @@
-.PHONY: compose-e2e-mock compose-e2e-mock-pg compose-e2e-mock-mariadb compose-e2e-down compose-e2e-down-pg compose-e2e-down-mariadb audit-load-k6 e2e-kind-mock e2e-kind-half-real e2e-kind-full-real e2e-kind-full-real-prepare e2e-kind-keep e2e-kind-clean act-release-e2e
+.PHONY: compose-e2e-mock compose-e2e-mock-pg compose-e2e-mock-mariadb compose-e2e-down compose-e2e-down-pg compose-e2e-down-mariadb audit-load-k6 e2e-kind-mock e2e-kind-half-real e2e-kind-half-real-pg e2e-kind-half-real-mariadb e2e-kind-full-real e2e-kind-full-real-prepare e2e-kind-keep e2e-kind-clean act-release-e2e
 
 COMPOSE_E2E_BASE_FILES := -f dev/docker-compose.yml -f dev/docker-compose.e2e.yml
 COMPOSE_E2E_FILES := $(COMPOSE_E2E_BASE_FILES) $(COMPOSE_DB_FILE)
@@ -35,6 +35,14 @@ e2e-kind-mock:
 e2e-kind-half-real:
 	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh scripts/e2e-appcheck-real.sh scripts/e2e-traefik-cors.sh
 	KIND_E2E_MODE=half-real ./scripts/helm-e2e-kind.sh
+
+e2e-kind-half-real-pg:
+	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh scripts/e2e-appcheck-real.sh scripts/e2e-traefik-cors.sh
+	KIND_E2E_MODE=half-real KIND_E2E_AUDIT_STORAGE=postgres ./scripts/helm-e2e-kind.sh
+
+e2e-kind-half-real-mariadb:
+	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh scripts/e2e-appcheck-real.sh scripts/e2e-traefik-cors.sh
+	KIND_E2E_MODE=half-real KIND_E2E_AUDIT_STORAGE=mariadb ./scripts/helm-e2e-kind.sh
 
 e2e-kind-full-real:
 	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh scripts/e2e-appcheck-real.sh scripts/e2e-traefik-cors.sh

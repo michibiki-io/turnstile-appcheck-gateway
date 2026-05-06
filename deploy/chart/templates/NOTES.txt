@@ -17,6 +17,9 @@ Admin dashboard: disabled
 Admin API: disabled
 {{- end }}
 
+{{- $auditStorageType := lower (trim (printf "%v" (default "sqlite" (index .Values.config "AUDIT_STORAGE_TYPE")))) }}
+Audit storage: {{ $auditStorageType }}
+{{- if eq $auditStorageType "sqlite" }}
 Audit SQLite path: {{ printf "%v" (default "/var/lib/turnstile-appcheck-gateway/audit.db" (index .Values.config "AUDIT_SQLITE_PATH")) }}
 Persistence:
   Enabled: {{ .Values.persistence.enabled }}
@@ -26,6 +29,9 @@ Persistence:
   {{- else }}
   Backend: emptyDir (audit history is lost when the Pod restarts)
   {{- end }}
+{{- else }}
+Audit DSN source: AUDIT_DSN secret key
+{{- end }}
 
 {{- if .Values.ingress.enabled }}
 Ingress URLs:

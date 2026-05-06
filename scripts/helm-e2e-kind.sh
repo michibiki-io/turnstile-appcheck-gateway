@@ -14,6 +14,7 @@ KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/.tmp/kind-${CLUSTER_NAME}.kubeco
 KEEP_CLUSTER="${KEEP_CLUSTER:-false}"
 KEEP_ON_FAILURE="${KEEP_ON_FAILURE:-true}"
 KIND_E2E_MODE="${KIND_E2E_MODE:-mock}"
+KIND_E2E_AUDIT_STORAGE="${KIND_E2E_AUDIT_STORAGE:-sqlite}"
 ENV_FILE="${ENV_FILE:-}"
 FULL_REAL_RUN_LOCAL_PORT="${FULL_REAL_RUN_LOCAL_PORT:-18081}"
 PORT_FORWARD_PID=""
@@ -27,6 +28,7 @@ TURNSTILE_MODE_DETAIL=""
 APP_CHECK_TOKEN=""
 APP_CHECK_TOKEN_FILE=""
 VALUES_FILE=""
+AUDIT_DSN_EFFECTIVE=""
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -44,6 +46,15 @@ case "${KIND_E2E_MODE}" in
     ;;
   *)
     echo "KIND_E2E_MODE must be one of: mock, half-real, full-real, full-real-prepare" >&2
+    exit 1
+    ;;
+esac
+
+case "${KIND_E2E_AUDIT_STORAGE}" in
+  sqlite|postgres|mariadb)
+    ;;
+  *)
+    echo "KIND_E2E_AUDIT_STORAGE must be one of: sqlite, postgres, mariadb" >&2
     exit 1
     ;;
 esac
@@ -118,6 +129,8 @@ debug_dump() {
   kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${NAMESPACE}" get all || true
   kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${NAMESPACE}" get ingressroute,middleware || true
   kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${NAMESPACE}" get events --sort-by=.lastTimestamp || true
+  kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${NAMESPACE}" logs deploy/audit-postgres || true
+  kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${NAMESPACE}" logs deploy/audit-mariadb || true
   kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${NAMESPACE}" describe deploy "${RELEASE_NAME}" || true
   kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${NAMESPACE}" logs deploy/"${RELEASE_NAME}" || true
   helm --kubeconfig "${KUBECONFIG_PATH}" status "${RELEASE_NAME}" -n "${NAMESPACE}" || true
@@ -152,6 +165,20 @@ cleanup() {
   exit "${exit_code}"
 }
 trap cleanup EXIT
+
+configure_audit_storage() {
+  case "${KIND_E2E_AUDIT_STORAGE}" in
+    sqlite)
+      AUDIT_DSN_EFFECTIVE=""
+      ;;
+    postgres)
+      AUDIT_DSN_EFFECTIVE="postgres://turnstile:turnstile@audit-postgres.${NAMESPACE}.svc.cluster.local:5432/turnstile_appcheck_gateway?sslmode=disable"
+      ;;
+    mariadb)
+      AUDIT_DSN_EFFECTIVE="turnstile:turnstile@tcp(audit-mariadb.${NAMESPACE}.svc.cluster.local:3306)/turnstile_appcheck_gateway?parseTime=true&charset=utf8mb4&loc=UTC"
+      ;;
+  esac
+}
 
 configure_real_mode() {
   resolve_env_file || true
@@ -193,6 +220,8 @@ write_values_file() {
   export FIREBASE_APP_ID_EFFECTIVE="${FIREBASE_APP_ID_EFFECTIVE:-}"
   export FIREBASE_APP_RESOURCE_EFFECTIVE="${FIREBASE_APP_RESOURCE_EFFECTIVE:-}"
   export GOOGLE_SERVICE_ACCOUNT_JSON_BASE64_EFFECTIVE="${GOOGLE_SERVICE_ACCOUNT_JSON_BASE64_EFFECTIVE:-}"
+  export KIND_E2E_AUDIT_STORAGE
+  export AUDIT_DSN_EFFECTIVE="${AUDIT_DSN_EFFECTIVE:-}"
 
   python3 - "${VALUES_FILE}" <<'PY'
 import json
@@ -204,6 +233,7 @@ mode = os.environ["KIND_E2E_MODE"]
 config = {
     "ADMIN_AUTH_MODE": "header",
     "ADMIN_ALLOWED_GROUPS": "gateway-admins",
+    "AUDIT_STORAGE_TYPE": os.environ["KIND_E2E_AUDIT_STORAGE"],
     "RATE_LIMIT_ENABLED": "false",
 }
 secrets = {
@@ -231,6 +261,10 @@ else:
         "TURNSTILE_SECRET_KEY": os.environ["TURNSTILE_SECRET_KEY_EFFECTIVE"],
         "GOOGLE_SERVICE_ACCOUNT_JSON_BASE64": os.environ["GOOGLE_SERVICE_ACCOUNT_JSON_BASE64_EFFECTIVE"],
     }
+
+audit_dsn = os.environ.get("AUDIT_DSN_EFFECTIVE", "")
+if audit_dsn:
+    secrets["AUDIT_DSN"] = audit_dsn
 
 def dump_map(name, values):
     print(f"{name}:")
@@ -263,6 +297,7 @@ check_k8s_logs_for_secret() {
   for marker in \
     "${TURNSTILE_SECRET_KEY_EFFECTIVE:-}" \
     "${GOOGLE_SERVICE_ACCOUNT_JSON_BASE64_EFFECTIVE:-}" \
+    "${AUDIT_DSN_EFFECTIVE:-}" \
     "${TURNSTILE_EXCHANGE_TOKEN:-}" \
     "${APP_CHECK_TOKEN:-}"; do
     if [[ -n "${marker}" ]] && grep -Fq "${marker}" "${log_file}"; then
@@ -271,6 +306,142 @@ check_k8s_logs_for_secret() {
     fi
   done
   rm -f "${log_file}"
+}
+
+apply_audit_database() {
+  case "${KIND_E2E_AUDIT_STORAGE}" in
+    sqlite)
+      return 0
+      ;;
+    postgres)
+      kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${NAMESPACE}" apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-postgres
+  labels:
+    app.kubernetes.io/name: audit-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_DB
+              value: turnstile_appcheck_gateway
+            - name: POSTGRES_USER
+              value: turnstile
+            - name: POSTGRES_PASSWORD
+              value: turnstile
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - turnstile
+                - -d
+                - turnstile_appcheck_gateway
+            initialDelaySeconds: 3
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-postgres
+spec:
+  selector:
+    app.kubernetes.io/name: audit-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+EOF
+      kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${NAMESPACE}" rollout status deploy/audit-postgres --timeout=5m
+      ;;
+    mariadb)
+      kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${NAMESPACE}" apply -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-mariadb
+  labels:
+    app.kubernetes.io/name: audit-mariadb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit-mariadb
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit-mariadb
+    spec:
+      containers:
+        - name: mariadb
+          image: mariadb:11.4
+          ports:
+            - containerPort: 3306
+              name: mariadb
+          env:
+            - name: MARIADB_DATABASE
+              value: turnstile_appcheck_gateway
+            - name: MARIADB_USER
+              value: turnstile
+            - name: MARIADB_PASSWORD
+              value: turnstile
+            - name: MARIADB_ROOT_PASSWORD
+              value: root
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - mariadb-admin ping -h 127.0.0.1 -uturnstile -pturnstile --silent
+            initialDelaySeconds: 5
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 60
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-mariadb
+spec:
+  selector:
+    app.kubernetes.io/name: audit-mariadb
+  ports:
+    - name: mariadb
+      port: 3306
+      targetPort: mariadb
+EOF
+      kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${NAMESPACE}" rollout status deploy/audit-mariadb --timeout=5m
+      ;;
+  esac
 }
 
 apply_full_real_prepare_frontend() {
@@ -374,12 +545,14 @@ helm lint "${ROOT_DIR}/deploy/chart" \
   --set-string secrets.TURNSTILE_SECRET_KEY=dummy \
   --set-string secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64=dummy
 
+configure_audit_storage
 if [[ "${KIND_E2E_MODE}" != "mock" ]]; then
   configure_real_mode
 fi
 write_values_file
 
 echo "kind e2e mode: ${KIND_E2E_MODE}"
+echo "kind audit storage: ${KIND_E2E_AUDIT_STORAGE}"
 
 if kind get clusters | grep -Fxq "${CLUSTER_NAME}"; then
   kind get kubeconfig --name "${CLUSTER_NAME}" > "${KUBECONFIG_PATH}"
@@ -398,6 +571,8 @@ kubectl --kubeconfig "${KUBECONFIG_PATH}" create namespace "${NAMESPACE}" --dry-
 
 kubectl --kubeconfig "${KUBECONFIG_PATH}" create namespace "${TRAEFIK_NAMESPACE}" --dry-run=client -o yaml | \
   kubectl --kubeconfig "${KUBECONFIG_PATH}" apply -f -
+
+apply_audit_database
 
 if ! helm repo list | awk '{print $1}' | grep -Fxq traefik; then
   helm repo add traefik https://traefik.github.io/charts
