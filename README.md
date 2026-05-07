@@ -8,19 +8,19 @@
 
 - [Security Notice](#security-notice)
 - [English](#english)
-  - [API Reference](#english-api-reference)
-  - [Architecture](#english-architecture)
-  - [Configuration](#english-configuration)
-  - [Admin Dashboard and Audit Logs](#english-admin-dashboard-and-audit-logs)
-  - [Firebase Web CustomProvider](#english-firebase-web-customprovider)
-  - [Development](#english-development)
-  - [Build](#english-build)
+  - [API Reference](#api-reference)
+  - [Architecture](#architecture)
+  - [Configuration](#configuration)
+  - [Admin Dashboard and Audit Logs](#admin-dashboard-and-audit-logs)
+  - [Firebase Web CustomProvider](#firebase-web-customprovider)
+  - [Development](#development)
+  - [Build](#build)
 - [日本語](#日本語)
   - [API リファレンス](#api-リファレンス)
   - [アーキテクチャ](#アーキテクチャ)
   - [設定](#設定)
   - [管理ダッシュボードと監査ログ](#管理ダッシュボードと監査ログ)
-  - [Firebase Web CustomProvider](#firebase-web-customprovider)
+  - [Firebase Web CustomProvider](#firebase-web-customprovider-1)
   - [開発モードで立ち上げ](#開発モードで立ち上げ)
   - [ビルド](#ビルド)
 - [References](#references)
@@ -40,7 +40,7 @@
 
 ## English
 
-### English API Reference
+### API Reference
 
 The service exposes the following public endpoints:
 
@@ -95,7 +95,7 @@ http:
 
 Traefik treats 2xx responses as allow and non-2xx responses as deny.
 
-### English Architecture
+### Architecture
 
 `POST {SUBPATH}/api/v1/exchange` is called by the frontend:
 
@@ -134,7 +134,7 @@ frontend
 docs/images
 ```
 
-### English Configuration
+### Configuration
 
 Configuration is read from environment variables. Use [.env.example](.env.example) for a standalone service run and [dev/.env.example](dev/.env.example) for the development Compose stack.
 
@@ -203,7 +203,7 @@ Public `/exchange` requests use strict JSON decoding with unknown fields rejecte
 
 `/exchange` does not implement idempotency. Turnstile response tokens and App Check tokens are short-lived, and replaying the same token-exchange payload can conflict with the external validation flow. Failed client attempts should obtain a fresh Turnstile token before retrying.
 
-### English Admin Dashboard and Audit Logs
+### Admin Dashboard and Audit Logs
 
 `turnstile-appcheck-gateway` can serve a lightweight administrator dashboard at `{SUBPATH}{ADMIN_BASE_PATH}/` (default: `/appcheck/admin/`). The dashboard uses a persistent left sidebar with `Dashboard` and `Audit Log` pages.
 
@@ -234,7 +234,7 @@ Audit logging intentionally avoids sensitive data. It records operational metada
 
 The dashboard displays build version and commit hash. Pass `BUILD_VERSION` and `BUILD_COMMIT` during Docker build to populate the sidebar version and GitHub commit link.
 
-### English Firebase Web CustomProvider
+### Firebase Web CustomProvider
 
 `/exchange` is called from the frontend. The Turnstile site key is public and belongs in frontend configuration. Never embed the Turnstile secret key in frontend code.
 
@@ -297,7 +297,7 @@ initializeAppCheck(firebaseApp, {
 <div id="turnstile-widget"></div>
 ```
 
-### English Development
+### Development
 
 Run the service with Docker:
 
@@ -346,7 +346,7 @@ Generated files under `internal/adminui/dist/` are build artifacts and are not t
 
 For contributor-focused test, CI, and release notes, see [docs/e2e-and-release.md](docs/e2e-and-release.md).
 
-### English Build
+### Build
 
 ```bash
 docker build -t turnstile-appcheck-gateway:local .
