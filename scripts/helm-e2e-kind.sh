@@ -344,6 +344,42 @@ check_k8s_logs_for_secret() {
   rm -f "${log_file}"
 }
 
+wait_for_traefik_mx_api_route() {
+  local app_check_token="$1"
+  local protected_path="${2:-/mx-api/api/v1/validate}"
+  local max_attempts="${3:-60}"
+  local attempt
+  local status
+  local body_file="${ROOT_DIR}/.tmp/kind-traefik-mx-api-wait.body"
+
+  if [[ -z "${app_check_token}" ]]; then
+    echo "missing App Check token for Traefik mx-api readiness wait" >&2
+    exit 1
+  fi
+
+  echo "waiting for Traefik mx-api route to accept valid App Check traffic"
+  for ((attempt = 1; attempt <= max_attempts; attempt += 1)); do
+    status="$(curl -sS -o "${body_file}" -w "%{http_code}" \
+      -H "X-Firebase-AppCheck: ${app_check_token}" \
+      "${BASE_URL}${protected_path}" || true)"
+    if [[ "${status}" =~ ^2 ]]; then
+      rm -f "${body_file}"
+      echo "Traefik mx-api route ready: HTTP ${status}"
+      return 0
+    fi
+    if [[ "${attempt}" -lt "${max_attempts}" ]]; then
+      sleep 1
+    fi
+  done
+
+  echo "Traefik mx-api route did not become ready: expected HTTP 2xx, got ${status:-<curl failed>}" >&2
+  if [[ -s "${body_file}" ]]; then
+    sed -n '1,20p' "${body_file}" >&2
+  fi
+  rm -f "${body_file}"
+  exit 1
+}
+
 apply_audit_database() {
   case "${KIND_E2E_AUDIT_STORAGE}" in
     sqlite)
@@ -777,6 +813,7 @@ BASE_URL="http://127.0.0.1:${LOCAL_PORT}"
 
 if [[ "${KIND_E2E_MODE}" == "mock" ]]; then
   "${ROOT_DIR}/scripts/e2e-smoke-mock.sh" "${BASE_URL}"
+  wait_for_traefik_mx_api_route "e2e-appcheck-valid-token"
   ALLOWED_ORIGIN="${ALLOWED_CORS_ORIGIN}" "${ROOT_DIR}/scripts/e2e-traefik-cors.sh" "${BASE_URL}"
 elif [[ "${KIND_E2E_MODE}" == "full-real-prepare" ]]; then
   apply_full_real_prepare_frontend
@@ -788,6 +825,7 @@ else
     APP_CHECK_TOKEN_OUT_FILE="${APP_CHECK_TOKEN_FILE}" \
     "${ROOT_DIR}/scripts/e2e-appcheck-real.sh" "${BASE_URL}"
   APP_CHECK_TOKEN="$(cat "${APP_CHECK_TOKEN_FILE}")"
+  wait_for_traefik_mx_api_route "${APP_CHECK_TOKEN}"
   APP_CHECK_TOKEN="${APP_CHECK_TOKEN}" \
     ALLOWED_ORIGIN="${ALLOWED_CORS_ORIGIN}" \
     "${ROOT_DIR}/scripts/e2e-traefik-cors.sh" "${BASE_URL}"
