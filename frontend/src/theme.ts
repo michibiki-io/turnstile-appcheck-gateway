@@ -37,7 +37,11 @@ function syncTheme() {
 
 function readStoredThemePreference(): ThemeMode {
   if (typeof window === 'undefined') return 'system';
-  return normalizeThemePreference(window.localStorage.getItem(THEME_STORAGE_KEY));
+  try {
+    return normalizeThemePreference(window.localStorage.getItem(THEME_STORAGE_KEY));
+  } catch {
+    return 'system';
+  }
 }
 
 function attachMediaQueryListener() {
@@ -74,7 +78,11 @@ export function setThemeMode(nextTheme: ThemeMode) {
   const normalized = normalizeThemePreference(nextTheme);
   themePreference.set(normalized);
   if (typeof window !== 'undefined') {
-    window.localStorage.setItem(THEME_STORAGE_KEY, normalized);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, normalized);
+    } catch {
+      // Storage may be disabled by browser policy. Keep the in-memory theme.
+    }
   }
   syncTheme();
 }

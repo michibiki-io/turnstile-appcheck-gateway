@@ -317,12 +317,22 @@
 
   function initialSidebarCollapsed(): boolean {
     if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem(sidebarStorageKey) === 'true';
+    try {
+      return window.localStorage.getItem(sidebarStorageKey) === 'true';
+    } catch {
+      return false;
+    }
   }
 
   function setSidebarCollapsed(next: boolean) {
     sidebarCollapsed = next;
-    if (typeof window !== 'undefined') window.localStorage.setItem(sidebarStorageKey, String(next));
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(sidebarStorageKey, String(next));
+      } catch {
+        // Storage may be disabled by browser policy. Keep the in-memory state.
+      }
+    }
   }
 
   function toggleThemeMenu() {
