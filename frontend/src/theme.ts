@@ -1,0 +1,102 @@
+import { get, writable } from 'svelte/store';
+
+export type ThemeMode = 'system' | 'light' | 'dark';
+
+const THEME_STORAGE_KEY = 'turnstile-appcheck-gateway.theme';
+
+export const supportedThemeModes = Object.freeze(['system', 'light', 'dark'] as const);
+export const themePreference = writable<ThemeMode>('system');
+export const resolvedTheme = writable<'light' | 'dark'>('light');
+
+let cleanupMediaQuery = () => {};
+
+function normalizeThemePreference(value: string | null): ThemeMode {
+  return supportedThemeModes.includes(value as ThemeMode) ? (value as ThemeMode) : 'system';
+}
+
+function resolveTheme(preference: ThemeMode): 'light' | 'dark' {
+  if (preference === 'system') {
+    if (prefersDarkTheme()) return 'dark';
+    return 'light';
+  }
+  return preference;
+}
+
+function applyResolvedTheme(theme: 'light' | 'dark') {
+  if (typeof document === 'undefined') return;
+
+  const root = document.documentElement;
+  root.classList.toggle('dark', theme === 'dark');
+  root.style.colorScheme = theme;
+  resolvedTheme.set(theme);
+}
+
+function syncTheme() {
+  applyResolvedTheme(resolveTheme(get(themePreference)));
+}
+
+function readStoredThemePreference(): ThemeMode {
+  if (typeof window === 'undefined') return 'system';
+  try {
+    return normalizeThemePreference(window.localStorage.getItem(THEME_STORAGE_KEY));
+  } catch {
+    return 'system';
+  }
+}
+
+function prefersDarkTheme(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  } catch {
+    return false;
+  }
+}
+
+function attachMediaQueryListener() {
+  if (typeof window === 'undefined') return () => {};
+
+  let mediaQuery: MediaQueryList;
+  try {
+    mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  } catch {
+    return () => {};
+  }
+  const handleChange = () => {
+    if (get(themePreference) === 'system') syncTheme();
+  };
+
+  if (typeof mediaQuery.addEventListener === 'function') {
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }
+
+  mediaQuery.addListener(handleChange);
+  return () => mediaQuery.removeListener(handleChange);
+}
+
+export function setupTheme() {
+  themePreference.set(readStoredThemePreference());
+  cleanupMediaQuery();
+  cleanupMediaQuery = attachMediaQueryListener();
+  syncTheme();
+  return cleanupTheme;
+}
+
+export function cleanupTheme() {
+  cleanupMediaQuery();
+  cleanupMediaQuery = () => {};
+}
+
+export function setThemeMode(nextTheme: ThemeMode) {
+  const normalized = normalizeThemePreference(nextTheme);
+  themePreference.set(normalized);
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, normalized);
+    } catch {
+      // Storage may be disabled by browser policy. Keep the in-memory theme.
+    }
+  }
+  syncTheme();
+}
