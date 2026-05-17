@@ -16,7 +16,7 @@ function normalizeThemePreference(value: string | null): ThemeMode {
 
 function resolveTheme(preference: ThemeMode): 'light' | 'dark' {
   if (preference === 'system') {
-    if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+    if (prefersDarkTheme()) return 'dark';
     return 'light';
   }
   return preference;
@@ -44,10 +44,24 @@ function readStoredThemePreference(): ThemeMode {
   }
 }
 
+function prefersDarkTheme(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  } catch {
+    return false;
+  }
+}
+
 function attachMediaQueryListener() {
   if (typeof window === 'undefined') return () => {};
 
-  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  let mediaQuery: MediaQueryList;
+  try {
+    mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  } catch {
+    return () => {};
+  }
   const handleChange = () => {
     if (get(themePreference) === 'system') syncTheme();
   };
