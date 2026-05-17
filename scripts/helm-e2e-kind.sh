@@ -6,7 +6,8 @@ CLUSTER_NAME="${CLUSTER_NAME:-turnstile-appcheck-gateway-e2e}"
 NAMESPACE="${NAMESPACE:-appcheck-e2e}"
 RELEASE_NAME="${RELEASE_NAME:-turnstile-appcheck-gateway}"
 IMAGE_NAME="${IMAGE_NAME:-turnstile-appcheck-gateway:e2e}"
-LOCAL_PORT="${LOCAL_PORT:-18080}"
+LOCAL_PORT_REQUESTED="${LOCAL_PORT:-}"
+LOCAL_PORT="${LOCAL_PORT_REQUESTED:-18080}"
 TRAEFIK_NAMESPACE="${TRAEFIK_NAMESPACE:-traefik-e2e}"
 TRAEFIK_RELEASE_NAME="${TRAEFIK_RELEASE_NAME:-traefik}"
 ALLOWED_CORS_ORIGIN="${ALLOWED_CORS_ORIGIN:-https://allowed-origin.e2e.test}"
@@ -120,6 +121,41 @@ require_env_value() {
     fi
     exit 1
   fi
+}
+
+port_available() {
+  python3 - "$1" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("127.0.0.1", port))
+    except OSError:
+        raise SystemExit(1)
+PY
+}
+
+choose_local_port() {
+  if port_available "${LOCAL_PORT}"; then
+    return 0
+  fi
+
+  if [[ -n "${LOCAL_PORT_REQUESTED}" ]]; then
+    echo "LOCAL_PORT ${LOCAL_PORT} is already in use" >&2
+    exit 1
+  fi
+
+  LOCAL_PORT="$(python3 - <<'PY'
+import socket
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+)"
 }
 
 debug_dump() {
@@ -553,6 +589,8 @@ write_values_file
 
 echo "kind e2e mode: ${KIND_E2E_MODE}"
 echo "kind audit storage: ${KIND_E2E_AUDIT_STORAGE}"
+choose_local_port
+echo "kind local port: ${LOCAL_PORT}"
 
 if kind get clusters | grep -Fxq "${CLUSTER_NAME}"; then
   kind get kubeconfig --name "${CLUSTER_NAME}" > "${KUBECONFIG_PATH}"
@@ -584,6 +622,7 @@ helm --kubeconfig "${KUBECONFIG_PATH}" upgrade --install "${TRAEFIK_RELEASE_NAME
   --wait \
   --timeout 5m \
   --set deployment.replicas=1 \
+  --set service.spec.type=ClusterIP \
   --set service.type=ClusterIP
 
 IMAGE_REPOSITORY="${IMAGE_NAME%:*}"
@@ -688,7 +727,17 @@ spec:
     - web
   routes:
     - kind: Rule
-      match: PathPrefix(\`/appcheck\`) || Path(\`/healthz\`) || Path(\`/readyz\`)
+      match: PathPrefix(\`/appcheck\`)
+      services:
+        - name: ${RELEASE_NAME}
+          port: 80
+    - kind: Rule
+      match: Path(\`/healthz\`)
+      services:
+        - name: ${RELEASE_NAME}
+          port: 80
+    - kind: Rule
+      match: Path(\`/readyz\`)
       services:
         - name: ${RELEASE_NAME}
           port: 80
@@ -714,9 +763,15 @@ EOF
 
 kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${NAMESPACE}" rollout status deploy/mx-api --timeout=5m
 
-kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${TRAEFIK_NAMESPACE}" port-forward svc/"${TRAEFIK_RELEASE_NAME}" "${LOCAL_PORT}:80" \
+kubectl --kubeconfig "${KUBECONFIG_PATH}" -n "${TRAEFIK_NAMESPACE}" port-forward --address 127.0.0.1 svc/"${TRAEFIK_RELEASE_NAME}" "${LOCAL_PORT}:80" \
   > "${ROOT_DIR}/.tmp/kind-port-forward.log" 2>&1 &
 PORT_FORWARD_PID=$!
+sleep 1
+if ! kill -0 "${PORT_FORWARD_PID}" >/dev/null 2>&1; then
+  cat "${ROOT_DIR}/.tmp/kind-port-forward.log" >&2 || true
+  echo "traefik port-forward failed" >&2
+  exit 1
+fi
 
 BASE_URL="http://127.0.0.1:${LOCAL_PORT}"
 
