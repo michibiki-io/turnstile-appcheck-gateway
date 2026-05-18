@@ -59,6 +59,34 @@ func TestHeaderAuthAllowDenyAndMe(t *testing.T) {
 	}
 }
 
+func TestReleaseTagURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{
+			name:  "docker tag version",
+			value: "1.2.3",
+			want:  "https://github.com/michibiki-io/turnstile-appcheck-gateway/releases/tag/v1.2.3",
+		},
+		{
+			name:  "git tag version",
+			value: "v1.2.3",
+			want:  "https://github.com/michibiki-io/turnstile-appcheck-gateway/releases/tag/v1.2.3",
+		},
+		{name: "dev", value: "dev", want: ""},
+		{name: "non semver", value: "main", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := releaseTagURL(tt.value); got != tt.want {
+				t.Fatalf("releaseTagURL(%q) = %q, want %q", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNoneAuthAndTimestampFormatting(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := testConfig(t)

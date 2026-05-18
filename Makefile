@@ -54,7 +54,7 @@ e2e-kind-full-real-prepare:
 
 e2e-kind-keep:
 	chmod +x scripts/helm-e2e-kind.sh scripts/e2e-smoke-mock.sh scripts/e2e-appcheck-real.sh scripts/e2e-traefik-cors.sh
-	KEEP_CLUSTER=true ./scripts/helm-e2e-kind.sh
+	KEEP_CLUSTER=true E2E_ADMIN_BROWSER_AUTH=true E2E_BUILD_VERSION=0.1.0 E2E_BUILD_COMMIT=0123456789abcdef0123456789abcdef01234567 ./scripts/helm-e2e-kind.sh
 
 e2e-kind-clean:
 	kind delete cluster --name turnstile-appcheck-gateway-e2e || true

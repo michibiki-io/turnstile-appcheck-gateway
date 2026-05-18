@@ -141,26 +141,49 @@ textarea:focus-visible {
   padding-inline: 0;
 }
 
-.admin-sidebar-collapse {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: auto;
-  padding: 10px;
-}
-
-.admin-shell.sidebar-collapsed .admin-sidebar-collapse {
-  justify-content: center;
-}
-
 .sidebar-toggle-button {
+  flex: 0 0 auto;
   color: var(--text-secondary);
 }
 
 .admin-sidebar-footer {
+  display: flex;
+  min-height: 65px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: auto;
   border-top: 1px solid var(--border-color);
-  padding: 16px 20px;
+  padding: 10px;
   color: var(--text-secondary);
   font-size: 14px;
+}
+
+.admin-shell.sidebar-collapsed .admin-sidebar-footer {
+  justify-content: center;
+}
+
+.app-info-trigger {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 44px;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.app-info-trigger:hover {
+  background: var(--surface-elevated);
+  color: var(--focus-ring);
 }
 
 .admin-topbar {
@@ -317,11 +340,19 @@ textarea:focus-visible {
 }
 
 .mobile-menu-panel {
+  display: flex;
+  flex-direction: column;
   width: min(360px, 92vw);
   min-height: 100vh;
   background: var(--surface-bg);
   color: var(--text-primary);
   box-shadow: 0 24px 60px rgb(0 0 0 / 0.28);
+}
+
+.mobile-menu-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--border-color);
+  padding: 12px;
 }
 
 .panel,
@@ -586,8 +617,37 @@ textarea:focus-visible {
   padding: 16px 20px;
 }
 
+.modal-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .modal-body {
   padding: 20px;
+}
+
+.about-metadata {
+  display: grid;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.about-metadata div {
+  display: grid;
+  gap: 4px;
+}
+
+.about-metadata dt {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.about-metadata dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
 }
 
 .danger-callout {

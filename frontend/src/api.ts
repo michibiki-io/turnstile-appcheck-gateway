@@ -8,6 +8,7 @@ export type AdminMe = {
   commit: string;
   shortCommit: string;
   commitURL: string;
+  releaseTagURL: string;
   auditTimestampFormat: string;
 };
 
