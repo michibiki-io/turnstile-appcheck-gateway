@@ -232,7 +232,7 @@ Authentication modes:
 
 Audit logging intentionally avoids sensitive data. It records operational metadata such as timestamp, actor, action, method, path, endpoint, result, status code, request ID, duration, remote address, user agent summary, high-level error code/message, `limitedUse`, and upstream service name. It does not store Turnstile secret keys, submitted Turnstile response tokens, Firebase App Check tokens, Firebase custom tokens, service account JSON, Authorization headers, cookies, raw request bodies, or full external API responses.
 
-The dashboard displays build version and commit hash. Pass `BUILD_VERSION` and `BUILD_COMMIT` during Docker build to populate the sidebar version and GitHub commit link.
+The dashboard displays build version in the sidebar and mobile menu, with commit hash available in the application information dialog. Pass `BUILD_VERSION` and `BUILD_COMMIT` during Docker build to populate the version, commit hash, and release tag link.
 
 ### Firebase Web CustomProvider
 
@@ -575,7 +575,7 @@ Dashboard の request metrics は async rollup counter を使うため、sample 
 
 audit logging は機密情報を保存しない設計です。記録するのは timestamp、actor、action、method、path、endpoint、result、status code、request ID、duration、remote address、user agent summary、高レベルな error code/message、`limitedUse`、upstream service name などの運用 metadata です。Turnstile secret key、送信された Turnstile response token、Firebase App Check token、Firebase custom token、service account JSON、Authorization header、cookie、raw request body、full external API response は保存しません。
 
-dashboard には build version と commit hash が表示されます。Docker build 時に `BUILD_VERSION` と `BUILD_COMMIT` を渡すと、sidebar の version と GitHub commit link に反映されます。
+dashboard は sidebar と mobile menu に build version を表示し、application information dialog で commit hash を確認できます。Docker build 時に `BUILD_VERSION` と `BUILD_COMMIT` を渡すと、version、commit hash、release tag link に反映されます。
 
 ### Firebase Web CustomProvider
 

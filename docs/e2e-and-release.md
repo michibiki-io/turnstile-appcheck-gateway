@@ -27,6 +27,17 @@ Keep the kind cluster:
 KEEP_CLUSTER=true make e2e-kind-mock
 ```
 
+The convenience target for browser inspection keeps the cluster and injects e2e-only admin identity headers through Traefik for `/appcheck/admin` and `/appcheck/_admin`:
+
+```bash
+make e2e-kind-keep
+kubectl --kubeconfig .tmp/kind-turnstile-appcheck-gateway-e2e.kubeconfig \
+  -n traefik-e2e port-forward --address 127.0.0.1 svc/traefik 18080:80
+```
+
+Then open `http://127.0.0.1:18080/appcheck/admin/`.
+This target also passes dummy Docker build args, `BUILD_VERSION=0.1.0` and `BUILD_COMMIT=0123456789abcdef0123456789abcdef01234567`, so the admin application information dialog can show the release GitHub icon and git hash without needing a real release build.
+
 Cleanup:
 
 ```bash
@@ -200,6 +211,17 @@ kind cluster を残す:
 ```bash
 KEEP_CLUSTER=true make e2e-kind-mock
 ```
+
+browser で admin 画面を確認する場合は、便利 target が cluster を残し、`/appcheck/admin` と `/appcheck/_admin` に対して e2e 専用の admin identity header を Traefik で注入します。
+
+```bash
+make e2e-kind-keep
+kubectl --kubeconfig .tmp/kind-turnstile-appcheck-gateway-e2e.kubeconfig \
+  -n traefik-e2e port-forward --address 127.0.0.1 svc/traefik 18080:80
+```
+
+その後 `http://127.0.0.1:18080/appcheck/admin/` を開きます。
+この target は dummy Docker build args として `BUILD_VERSION=0.1.0`、`BUILD_COMMIT=0123456789abcdef0123456789abcdef01234567` も渡すため、real release build なしで admin の application information dialog に release GitHub icon と git hash を表示できます。
 
 cleanup:
 

@@ -83,6 +83,7 @@
   let resetConfirmation = '';
   let resetReason = '';
   let resetting = false;
+  let aboutOpen = false;
   let loading = true;
   let metricsLoading = false;
   let auditLoading = false;
@@ -118,6 +119,7 @@
   $: brandWordmark = isDarkTheme ? './turnstile-appcheck-gateway-logo-str-dark.svg' : './turnstile-appcheck-gateway-logo-str.svg';
   $: pageTitle = activeView === 'audit' ? 'Audit Log' : 'Dashboard';
   $: pageDescription = activeView === 'audit' ? 'Search, inspect, and reset gateway audit events.' : 'Monitor gateway request health and traffic trends.';
+  $: releaseTagURL = me?.releaseTagURL ?? '';
   $: chartTextColor = isDarkTheme ? '#CBD5E1' : '#475569';
   $: chartGridColor = isDarkTheme ? 'rgba(148, 163, 184, 0.24)' : 'rgba(203, 213, 225, 0.7)';
   $: chartSurfaceColor = isDarkTheme ? '#0F172A' : '#FFFFFF';
@@ -351,6 +353,7 @@
     mobileMenuOpen = false;
     if (detailOpen) detailOpen = false;
     if (resetOpen && !resetting) resetOpen = false;
+    if (aboutOpen) aboutOpen = false;
   }
 
   async function changePageSize() {
@@ -422,6 +425,12 @@
     resetOpen = true;
   }
 
+  function openAboutModal() {
+    aboutOpen = true;
+    mobileMenuOpen = false;
+    themeMenuOpen = false;
+  }
+
   async function resetAuditLog() {
     resetting = true;
     error = '';
@@ -481,7 +490,13 @@
       </button>
     </nav>
 
-    <div class="admin-sidebar-collapse">
+    <div class="admin-sidebar-footer">
+      {#if me && !sidebarCollapsed}
+        <button class="app-info-trigger" type="button" aria-label="Open application information" onclick={openAboutModal}>
+          <Icon icon="lucide:info" class="h-4 w-4 shrink-0" />
+          <span class="truncate">Version {me.version}</span>
+        </button>
+      {/if}
       <button
         class="icon-button sidebar-toggle-button"
         aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -491,19 +506,6 @@
       >
         <Icon icon={sidebarCollapsed ? 'lucide:panel-left-open' : 'lucide:panel-left-close'} class="h-5 w-5" />
       </button>
-    </div>
-
-    <div class="admin-sidebar-footer">
-      {#if me && !sidebarCollapsed}
-        {#if me.commitURL}
-          <a class="inline-flex max-w-full items-center gap-1.5 truncate hover:underline" href={me.commitURL} target="_blank" rel="noreferrer">
-            <Icon icon="mdi:github" class="h-4 w-4 shrink-0" />
-            <span class="truncate">{me.shortCommit}</span>
-          </a>
-        {:else}
-          <span class="truncate">Commit {me.shortCommit}</span>
-        {/if}
-      {/if}
     </div>
   </aside>
 
@@ -597,6 +599,14 @@
               <span>Audit Log</span>
             </button>
           </div>
+          {#if me}
+            <div class="mobile-menu-footer">
+              <button class="app-info-trigger" type="button" aria-label="Open application information" onclick={openAboutModal}>
+                <Icon icon="lucide:info" class="h-4 w-4 shrink-0" />
+                <span class="truncate">Version {me.version}</span>
+              </button>
+            </div>
+          {/if}
         </div>
       </div>
     {/if}
@@ -922,6 +932,43 @@
     <div class="loading-indicator">
       <span class="loading-spinner" aria-hidden="true"></span>
       <span role="status" aria-live="polite">Loading dashboard</span>
+    </div>
+  </div>
+{/if}
+
+{#if aboutOpen && me}
+  <div class="modal-backdrop" role="presentation">
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="about-app-title">
+      <div class="modal-header">
+        <h2 id="about-app-title" class="text-base font-semibold">About This Application</h2>
+        <div class="modal-header-actions">
+          {#if releaseTagURL}
+            <a class="icon-button" aria-label="Open release tag on GitHub" title="Open release tag on GitHub" href={releaseTagURL} target="_blank" rel="noreferrer">
+              <Icon icon="bi:github" class="h-5 w-5" />
+            </a>
+          {/if}
+          <button class="icon-button" aria-label="Close application information" title="Close" onclick={() => (aboutOpen = false)}>
+            <Icon icon="lets-icons:close-round" class="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+      <div class="modal-body space-y-4">
+        <p class="text-sm text-[var(--text-secondary)]">Admin dashboard for monitoring Turnstile and Firebase App Check gateway activity.</p>
+        <dl class="about-metadata">
+          <div>
+            <dt>Application</dt>
+            <dd>{appName}</dd>
+          </div>
+          <div>
+            <dt>Build version</dt>
+            <dd>{me.version}</dd>
+          </div>
+          <div>
+            <dt>Git hash</dt>
+            <dd>{me.commit}</dd>
+          </div>
+        </dl>
+      </div>
     </div>
   </div>
 {/if}

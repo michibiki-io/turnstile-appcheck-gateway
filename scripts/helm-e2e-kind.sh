@@ -6,6 +6,8 @@ CLUSTER_NAME="${CLUSTER_NAME:-turnstile-appcheck-gateway-e2e}"
 NAMESPACE="${NAMESPACE:-appcheck-e2e}"
 RELEASE_NAME="${RELEASE_NAME:-turnstile-appcheck-gateway}"
 IMAGE_NAME="${IMAGE_NAME:-turnstile-appcheck-gateway:e2e}"
+E2E_BUILD_VERSION="${E2E_BUILD_VERSION:-dev}"
+E2E_BUILD_COMMIT="${E2E_BUILD_COMMIT:-unknown}"
 LOCAL_PORT_REQUESTED="${LOCAL_PORT:-}"
 LOCAL_PORT="${LOCAL_PORT_REQUESTED:-18080}"
 TRAEFIK_NAMESPACE="${TRAEFIK_NAMESPACE:-traefik-e2e}"
@@ -14,6 +16,7 @@ ALLOWED_CORS_ORIGIN="${ALLOWED_CORS_ORIGIN:-https://allowed-origin.e2e.test}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/.tmp/kind-${CLUSTER_NAME}.kubeconfig}"
 KEEP_CLUSTER="${KEEP_CLUSTER:-false}"
 KEEP_ON_FAILURE="${KEEP_ON_FAILURE:-true}"
+E2E_ADMIN_BROWSER_AUTH="${E2E_ADMIN_BROWSER_AUTH:-false}"
 KIND_E2E_MODE="${KIND_E2E_MODE:-mock}"
 KIND_E2E_AUDIT_STORAGE="${KIND_E2E_AUDIT_STORAGE:-sqlite}"
 ENV_FILE="${ENV_FILE:-}"
@@ -56,6 +59,15 @@ case "${KIND_E2E_AUDIT_STORAGE}" in
     ;;
   *)
     echo "KIND_E2E_AUDIT_STORAGE must be one of: sqlite, postgres, mariadb" >&2
+    exit 1
+    ;;
+esac
+
+case "${E2E_ADMIN_BROWSER_AUTH}" in
+  true|false)
+    ;;
+  *)
+    echo "E2E_ADMIN_BROWSER_AUTH must be true or false" >&2
     exit 1
     ;;
 esac
@@ -193,6 +205,13 @@ cleanup() {
 
   if [[ ${exit_code} -eq 0 && "${KEEP_CLUSTER}" == "true" ]]; then
     echo "kind resources preserved after success" >&2
+    if [[ "${E2E_ADMIN_BROWSER_AUTH}" == "true" ]]; then
+      echo "admin browser auth is enabled for this e2e cluster" >&2
+      echo "run this port-forward to open the admin dashboard:" >&2
+      echo "  kubectl --kubeconfig ${KUBECONFIG_PATH} -n ${TRAEFIK_NAMESPACE} port-forward --address 127.0.0.1 svc/${TRAEFIK_RELEASE_NAME} ${LOCAL_PORT}:80" >&2
+      echo "then open:" >&2
+      echo "  http://127.0.0.1:${LOCAL_PORT}/appcheck/admin/" >&2
+    fi
     exit 0
   fi
 
@@ -342,6 +361,42 @@ check_k8s_logs_for_secret() {
     fi
   done
   rm -f "${log_file}"
+}
+
+admin_browser_auth_documents() {
+  if [[ "${E2E_ADMIN_BROWSER_AUTH}" != "true" ]]; then
+    return 0
+  fi
+
+  cat <<'EOF'
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: e2e-admin-browser-auth
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-User: e2e-admin
+      X-Forwarded-Email: e2e-admin@example.com
+      X-Forwarded-Groups: gateway-admins
+EOF
+}
+
+admin_browser_auth_routes() {
+  if [[ "${E2E_ADMIN_BROWSER_AUTH}" != "true" ]]; then
+    return 0
+  fi
+
+  cat <<EOF
+    - kind: Rule
+      match: PathPrefix(\`/appcheck/admin\`) || PathPrefix(\`/appcheck/_admin\`)
+      middlewares:
+        - name: e2e-admin-browser-auth
+      services:
+        - name: ${RELEASE_NAME}
+          port: 80
+EOF
 }
 
 wait_for_traefik_mx_api_route() {
@@ -625,6 +680,8 @@ write_values_file
 
 echo "kind e2e mode: ${KIND_E2E_MODE}"
 echo "kind audit storage: ${KIND_E2E_AUDIT_STORAGE}"
+echo "kind build version: ${E2E_BUILD_VERSION}"
+echo "kind build commit: ${E2E_BUILD_COMMIT}"
 choose_local_port
 echo "kind local port: ${LOCAL_PORT}"
 
@@ -637,7 +694,11 @@ chmod 600 "${KUBECONFIG_PATH}"
 
 kubectl --kubeconfig "${KUBECONFIG_PATH}" get nodes
 
-docker build -t "${IMAGE_NAME}" "${ROOT_DIR}"
+docker build \
+  --build-arg BUILD_VERSION="${E2E_BUILD_VERSION}" \
+  --build-arg BUILD_COMMIT="${E2E_BUILD_COMMIT}" \
+  -t "${IMAGE_NAME}" \
+  "${ROOT_DIR}"
 kind load docker-image "${IMAGE_NAME}" --name "${CLUSTER_NAME}"
 
 kubectl --kubeconfig "${KUBECONFIG_PATH}" create namespace "${NAMESPACE}" --dry-run=client -o yaml | \
@@ -732,6 +793,7 @@ spec:
       - X-Firebase-AppCheck
     accessControlMaxAge: 86400
     addVaryHeader: true
+$(admin_browser_auth_documents)
 ---
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
@@ -762,6 +824,7 @@ spec:
   entryPoints:
     - web
   routes:
+$(admin_browser_auth_routes)
     - kind: Rule
       match: PathPrefix(\`/appcheck\`)
       services:

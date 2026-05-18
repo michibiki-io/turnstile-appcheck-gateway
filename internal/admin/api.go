@@ -24,6 +24,7 @@ func (h *Handler) me(c *gin.Context) {
 		"commit":               version.Commit(),
 		"shortCommit":          version.ShortCommit(),
 		"commitURL":            commitURL(version.Commit()),
+		"releaseTagURL":        releaseTagURL(version.Value()),
 		"auditTimestampFormat": h.cfg.Admin.Dashboard.TimestampFormat,
 	})
 }
@@ -183,6 +184,27 @@ func commitURL(commit string) string {
 		return ""
 	}
 	return "https://github.com/michibiki-io/turnstile-appcheck-gateway/commit/" + commit
+}
+
+func releaseTagURL(buildVersion string) string {
+	tag := strings.TrimSpace(buildVersion)
+	if tag == "" || tag == "dev" {
+		return ""
+	}
+	if !strings.HasPrefix(tag, "v") {
+		tag = "v" + tag
+	}
+	parts := strings.Split(strings.TrimPrefix(tag, "v"), ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	for _, part := range parts {
+		value, err := strconv.Atoi(part)
+		if err != nil || value < 0 {
+			return ""
+		}
+	}
+	return "https://github.com/michibiki-io/turnstile-appcheck-gateway/releases/tag/" + tag
 }
 
 func (h *Handler) auditReset(c *gin.Context) {
